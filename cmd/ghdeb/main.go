@@ -16,11 +16,11 @@ import (
 	"github.com/leisurelinux/ghdeb/internal/state"
 )
 
-const version = "0.3.12"
+const version = "0.3.13"
 
 func main() {
 	// 显示版本信息
-	fmt.Printf(T("ghdeb v%s - 轻量级 orphan deb 升级工具 © LeisureLinux\n", "ghdeb v%s - a lightweight orphan deb upgrader © LeisureLinux\n"), version)
+	fmt.Printf(T("ghdeb v%s - 轻量级孤立包 deb 升级工具 © LeisureLinux\n", "ghdeb v%s - a lightweight orphan deb upgrader © LeisureLinux\n"), version)
 
 	if len(os.Args) < 2 {
 		printUsage()
@@ -72,8 +72,8 @@ func printUsage() {
 
 用法:
   ghdeb install <owner/repo>[@tag]   安装（或升级到）指定版本
-  ghdeb upgrade [owner/repo]         升级包（自动扫描 orphan，不指定则升级所有）
-  ghdeb scan [--deep]                扫描系统中的 GitHub orphan 包并纳入管理
+  ghdeb upgrade [owner/repo]         升级包（自动扫描孤立包，不指定则升级所有）
+  ghdeb scan [--deep]                扫描系统中的 GitHub 孤立包并纳入管理
                                      --deep: 抓取 Homepage 页面查找 GitHub 链接
   ghdeb list [--refresh]             列出所有包（含已移除），--refresh 强制刷新版本缓存
   ghdeb history <owner/repo>         查看某包的完整操作历史
@@ -92,7 +92,7 @@ Shell 补全:
 
 示例:
   ghdeb install sharkdp/bat          安装 bat 最新版
-  ghdeb scan [--deep]                扫描系统中的 GitHub orphan 包并纳入管理
+  ghdeb scan [--deep]                扫描系统中的 GitHub 孤立包并纳入管理
                                      --deep: 抓取 Homepage 页面查找 GitHub 链接
   ghdeb upgrade                      升级所有已管理的包
   ghdeb history sharkdp/bat          查看 bat 的安装/升级/移除历史
@@ -211,16 +211,16 @@ func cmdUpgrade(args []string) error {
 		return err
 	}
 
-	// 升级前自动扫描 orphan 包
+	// 升级前自动扫描孤立包
 	if len(args) == 0 {
-		fmt.Println(T("🔍 扫描系统中的 GitHub orphan 包...", "🔍 Scanning GitHub orphan packages..."))
+		fmt.Println(T("🔍 扫描系统中的 GitHub 孤立包...", "🔍 Scanning GitHub orphan packages..."))
 		orphans, scanErr := state.ScanOrphans(false, nil)
 		if scanErr != nil {
 			fmt.Fprintf(os.Stderr, "⚠️  %s: %v\n", T("扫描失败", "Scan failed"), scanErr)
 		} else if len(orphans) > 0 {
 			added := state.MergeOrphansToState(st, orphans)
 			if added > 0 {
-				fmt.Printf(T("📦 发现 %d 个新的 GitHub orphan 包，已纳入管理\n", "📦 Found %d new GitHub orphan packages, added to management\n"), added)
+				fmt.Printf(T("📦 发现 %d 个新的 GitHub 孤立包，已纳入管理\n", "📦 Found %d new GitHub orphan packages, added to management\n"), added)
 				for _, o := range orphans {
 					var repoKey string
 					if o.HasGitHub {
@@ -413,9 +413,9 @@ func cmdScan(args []string) error {
 	}
 
 	if deepScan {
-		fmt.Println(T("🔍 深度扫描系统中的 orphan 包（抓取 Homepage 查找 GitHub 链接）...", "🔍 Deep scanning orphan packages (fetching Homepage for GitHub links)..."))
+		fmt.Println(T("🔍 深度扫描系统中的孤立包（抓取 Homepage 查找 GitHub 链接）...", "🔍 Deep scanning orphan packages (fetching Homepage for GitHub links)..."))
 	} else {
-		fmt.Println(T("🔍 扫描系统中的 orphan 包（无 apt 源）...", "🔍 Scanning orphan packages (no apt source)..."))
+		fmt.Println(T("🔍 扫描系统中的孤立包（无 apt 源）...", "🔍 Scanning orphan packages (no apt source)..."))
 		fmt.Println(T("   提示: 使用 --deep 参数可尝试从 Homepage 页面中查找 GitHub 链接", "   Hint: Use --deep to fetch Homepage for GitHub links"))
 	}
 
@@ -429,12 +429,12 @@ func cmdScan(args []string) error {
 	}
 
 	if len(pkgs) == 0 {
-		fmt.Println(T("未发现 GitHub 来源的 orphan 包", "No GitHub-sourced orphan packages found"))
+		fmt.Println(T("未发现 GitHub 来源的孤立包", "No GitHub-sourced orphan packages found"))
 		return nil
 	}
 
 	// 显示发现的包
-	fmt.Printf(T("\n发现 %d 个 orphan 包:\n", "\nFound %d orphan packages:\n"), len(pkgs))
+	fmt.Printf(T("\n发现 %d 个孤立包:\n", "\nFound %d orphan packages:\n"), len(pkgs))
 	fmt.Printf("%-20s %-30s %-12s %-10s %s\n", T("包名", "Package"), T("仓库", "Repo"), T("版本", "Version"), T("状态", "Status"), "Homepage")
 	fmt.Println(strings.Repeat("-", 100))
 
