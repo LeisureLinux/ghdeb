@@ -15,7 +15,7 @@ import (
 	"github.com/leisurelinux/ghdeb/internal/state"
 )
 
-const version = "0.2.0"
+const version = "0.3.0"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -32,6 +32,8 @@ func main() {
 		err = cmdInstall(args)
 	case "upgrade":
 		err = cmdUpgrade(args)
+	case "scan":
+		err = cmdScan(args)
 	case "list", "ls":
 		err = cmdList()
 	case "history":
@@ -61,7 +63,8 @@ func printUsage() {
 
 用法:
   ghdeb install <owner/repo>[@tag]   安装（或升级到）指定版本
-  ghdeb upgrade [owner/repo]         升级包（不指定则升级所有已安装包）
+  ghdeb upgrade [owner/repo]         升级包（自动扫描 orphan，不指定则升级所有）
+  ghdeb scan [--all]                 扫描系统中的 GitHub 来源包（--all 含非 orphan）
   ghdeb list                         列出所有包（含已移除）
   ghdeb history <owner/repo>         查看某包的完整操作历史
   ghdeb remove <owner/repo>          标记移除（保留历史记录）
@@ -73,9 +76,9 @@ func printUsage() {
 
 示例:
   ghdeb install sharkdp/bat          安装 bat 最新版
-  ghdeb install casey/just@v1.25.0   安装 just 指定版本
-  ghdeb upgrade                      升级所有已安装的包
-  ghdeb upgrade sharkdp/bat          只升级 bat
+  ghdeb scan                         扫描系统中的 GitHub orphan 包并纳入管理
+  ghdeb scan --all                   扫描所有 GitHub 来源包（含 apt 源安装的）
+  ghdeb upgrade                      升级所有已管理的包
   ghdeb history sharkdp/bat          查看 bat 的安装/升级/移除历史
 `)
 }
@@ -106,7 +109,6 @@ func cmdInstall(args []string) error {
 	}
 	fmt.Printf("📌 版本: %s\n", release.TagName)
 
-	// 检查是否已安装相同版本
 	st, err := state.Load()
 	if err != nil {
 		return err
@@ -127,18 +129,15 @@ func cmdInstall(args []string) error {
 	}
 	fmt.Printf("📥 匹配文件: %s (%s)\n", asset.Name, formatSize(asset.Size))
 
-	// 下载
 	destPath, err := downloadAsset(client, *asset)
 	if err != nil {
 		return err
 	}
 
-	// 安装
 	if err := installDeb(destPath); err != nil {
 		return err
 	}
 
-	// 记录状态
 	releaseURL := release.HTMLURL
 	if releaseURL == "" {
 		releaseURL = fmt.Sprintf("https://github.com/%s/%s/releases/tag/%s", owner, repo, release.TagName)
@@ -160,6 +159,29 @@ func cmdUpgrade(args []string) error {
 		return err
 	}
 
+	// 升级前自动扫描 orphan 包
+	if len(args) == 0 {
+		fmt.Println("🔍 扫描系统中的 GitHub orphan 包...")
+		orphans, scanErr := state.ScanGitHubOrphans()
+		if scanErr != nil {
+			fmt.Fprintf(os.Stderr, "⚠️  扫描失败: %v\n", scanErr)
+		} else if len(orphans) > 0 {
+			added := state.MergeOrphansToState(st, orphans)
+			if added > 0 {
+				fmt.Printf("📦 发现 %d 个新的 GitHub orphan 包，已纳入管理\n", added)
+				for _, o := range orphans {
+					if st.Get(o.Owner+"/"+o.Repo) != nil && st.Get(o.Owner+"/"+o.Repo).UpdatedAt == "auto-discovered" {
+						fmt.Printf("   + %s/%s (%s)\n", o.Owner, o.Repo, o.Version)
+					}
+				}
+				if saveErr := st.Save(); saveErr != nil {
+					fmt.Fprintf(os.Stderr, "⚠️  保存状态失败: %v\n", saveErr)
+				}
+			}
+		}
+		fmt.Println()
+	}
+
 	var repos []string
 	if len(args) > 0 {
 		repos = args
@@ -168,7 +190,7 @@ func cmdUpgrade(args []string) error {
 			repos = append(repos, r.Owner+"/"+r.Repo)
 		}
 		if len(repos) == 0 {
-			fmt.Println("没有已安装的包需要升级")
+			fmt.Println("没有已管理的包需要升级")
 			return nil
 		}
 	}
@@ -232,7 +254,6 @@ func cmdUpgrade(args []string) error {
 			releaseURL = fmt.Sprintf("https://github.com/%s/%s/releases/tag/%s", owner, repo, release.TagName)
 		}
 
-		// 根据是否已有记录，决定是 install 还是 upgrade
 		if existing != nil && !existing.Removed && existing.CurrentVersion != "" {
 			st.SetUpgrade(repoKey, release.TagName, asset.Name, destPath, releaseURL)
 		} else {
@@ -254,6 +275,90 @@ func cmdUpgrade(args []string) error {
 	return nil
 }
 
+// --- scan ---
+
+func cmdScan(args []string) error {
+	allMode := false
+	for _, a := range args {
+		if a == "--all" {
+			allMode = true
+		}
+	}
+
+	st, err := state.Load()
+	if err != nil {
+		return err
+	}
+
+	var pkgs []state.GitHubOrphan
+	var scanErr error
+
+	if allMode {
+		fmt.Println("🔍 扫描系统中所有 GitHub 来源的包...")
+		pkgs, scanErr = state.DiscoverGitHubPackages()
+	} else {
+		fmt.Println("🔍 扫描系统中的 GitHub orphan 包（无 apt 源）...")
+		pkgs, scanErr = state.ScanGitHubOrphans()
+	}
+	if scanErr != nil {
+		return fmt.Errorf("扫描失败: %w", scanErr)
+	}
+
+	if len(pkgs) == 0 {
+		fmt.Println("未发现 GitHub 来源的包")
+		return nil
+	}
+
+	// 显示发现的包
+	fmt.Printf("\n发现 %d 个 GitHub 来源的包:\n", len(pkgs))
+	fmt.Printf("%-20s %-30s %-12s %-10s %s\n", "包名", "仓库", "版本", "状态", "Homepage")
+	fmt.Println(strings.Repeat("-", 100))
+
+	newCount := 0
+	for _, p := range pkgs {
+		repoKey := p.Owner + "/" + p.Repo
+		existing := st.Get(repoKey)
+
+		status := "🆕 未管理"
+		if existing != nil {
+			if existing.Removed {
+				status = "❌ removed"
+			} else {
+				status = "✅ 已管理"
+			}
+		}
+
+		fmt.Printf("%-20s %-30s %-12s %-10s %s\n",
+			p.PkgName,
+			repoKey,
+			p.Version,
+			status,
+			truncate(p.Homepage, 40),
+		)
+
+		if existing == nil {
+			newCount++
+		}
+	}
+
+	// 询问是否纳入管理
+	if newCount > 0 {
+		fmt.Printf("\n📦 其中 %d 个尚未管理\n", newCount)
+		fmt.Print("是否纳入 ghdeb 管理？[y/N] ")
+		var answer string
+		fmt.Scanln(&answer)
+		if strings.ToLower(answer) == "y" {
+			added := state.MergeOrphansToState(st, pkgs)
+			if err := st.Save(); err != nil {
+				return fmt.Errorf("保存状态失败: %w", err)
+			}
+			fmt.Printf("✅ 已将 %d 个包纳入管理\n", added)
+		}
+	}
+
+	return nil
+}
+
 // --- list ---
 
 func cmdList() error {
@@ -263,14 +368,14 @@ func cmdList() error {
 	}
 	records := st.List()
 	if len(records) == 0 {
-		fmt.Println("没有已安装的包")
+		fmt.Println("没有已管理的包")
+		fmt.Println("提示: 运行 'ghdeb scan' 扫描系统中的 GitHub 来源包")
 		return nil
 	}
 
 	fmt.Printf("%-30s %-12s %-12s %-10s %-19s\n", "仓库", "安装版本", "系统版本", "状态", "最后操作")
 	fmt.Println(strings.Repeat("-", 90))
 	for _, r := range records {
-		// 运行时查询系统版本
 		r.RefreshSystemInfo(r.Repo)
 
 		status := "✅ installed"
@@ -283,7 +388,11 @@ func cmdList() error {
 			sysVer = "-"
 		}
 
-		updatedAt := formatTime(r.UpdatedAt)
+		updatedAt := r.UpdatedAt
+		if updatedAt != "auto-discovered" {
+			updatedAt = formatTime(updatedAt)
+		}
+
 		fmt.Printf("%-30s %-12s %-12s %-10s %-19s\n",
 			r.Owner+"/"+r.Repo,
 			r.CurrentVersion,
@@ -317,7 +426,6 @@ func cmdHistory(args []string) error {
 		fmt.Printf("状态: ❌ 已移除\n")
 	}
 
-	// 查询系统版本
 	rec.RefreshSystemInfo(rec.Repo)
 	if rec.SystemVersion != "" {
 		fmt.Printf("系统版本: %s\n", rec.SystemVersion)
@@ -329,7 +437,10 @@ func cmdHistory(args []string) error {
 	fmt.Printf("\n操作历史:\n")
 	fmt.Println(strings.Repeat("-", 80))
 	for i, e := range rec.History {
-		ts := formatTime(e.Timestamp)
+		ts := e.Timestamp
+		if ts != "auto-discovered" {
+			ts = formatTime(ts)
+		}
 		switch e.Action {
 		case state.ActionInstall:
 			fmt.Printf("  %d. [%s] INSTALL  %s\n", i+1, ts, e.Version)
@@ -518,7 +629,6 @@ func formatSize(bytes int64) string {
 	}
 }
 
-// formatTime 将 RFC3339 时间格式化为更易读的格式
 func formatTime(s string) string {
 	t, err := time.Parse(time.RFC3339, s)
 	if err != nil {
@@ -527,5 +637,11 @@ func formatTime(s string) string {
 	return t.Format("2006-01-02 15:04:05")
 }
 
-// 确保 syscall 被使用
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen-3] + "..."
+}
+
 var _ = syscall.Geteuid
