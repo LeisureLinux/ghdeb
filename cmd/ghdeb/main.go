@@ -4,6 +4,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"sort"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -405,10 +406,15 @@ func cmdList() error {
 		return nil
 	}
 
-	fmt.Printf("%-35s %-12s %-12s %-12s %-10s %-19s\n", "包名:仓库slug", "安装版本", "系统版本", "最新版本", "状态", "最后操作")
+	fmt.Printf("%-35s %-12s %-12s %-12s %-10s %-19s\n", "包名:仓库slug", "记录版本", "实际版本", "最新版本", "状态", "最后操作")
 	fmt.Println(strings.Repeat("-", 110))
 
 	client := gh.NewClient()
+
+	// 按包名排序
+	sort.Slice(records, func(i, j int) bool {
+		return records[i].PkgName < records[j].PkgName
+	})
 
 	for _, r := range records {
 		r.RefreshSystemInfo(r.PkgName)
