@@ -16,7 +16,7 @@ import (
 	"github.com/leisurelinux/ghdeb/internal/state"
 )
 
-const version = "0.3.9"
+const version = "0.3.10"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -270,10 +270,23 @@ func cmdUpgrade(args []string) error {
 			}
 		}
 	} else {
-		for _, r := range st.ListActive() {
-			if r.Owner != "" && r.Repo != "" {
-				targets = append(targets, upgradeTarget{owner: r.Owner, repo: r.Repo, pkg: r})
+		// 遍历所有包（包括已移除的），检查实际安装状态
+		for _, r := range st.List() {
+			if r.Owner == "" || r.Repo == "" {
+				continue
 			}
+			// 检查包是否实际安装在系统上
+			installed := false
+			if r.PkgName != "" {
+				installed = deb.IsPackageInstalled(r.PkgName)
+			}
+			// 如果包已移除但实际还在系统上，恢复状态
+			if r.Removed && installed {
+				r.Removed = false
+				fmt.Printf(T("📦 %s/%s 仍在系统上，恢复管理\n", "📦 %s/%s still installed, restoring management\n"), r.Owner, r.Repo)
+			}
+			// 包含所有有 owner/repo 的包（无论 Removed 状态）
+			targets = append(targets, upgradeTarget{owner: r.Owner, repo: r.Repo, pkg: r})
 		}
 	}
 
@@ -308,7 +321,7 @@ func cmdUpgrade(args []string) error {
 		if !t.pkg.Removed {
 			fmt.Printf(T("📦 发现新版本: %s → %s\n", "📦 New version found: %s → %s\n"), t.pkg.CurrentVersion, release.TagName)
 		} else {
-			fmt.Printf(T("📦 新版本: %s\n", "📦 New version: %s\n"), release.TagName)
+			fmt.Printf(T("📦 重新安装: %s\n", "📦 Reinstalling: %s\n"), release.TagName)
 		}
 
 		asset, findErr := gh.FindDebAsset(release, arch)
@@ -340,13 +353,18 @@ func cmdUpgrade(args []string) error {
 			releaseURL = fmt.Sprintf("https://github.com/%s/%s/releases/tag/%s", t.owner, t.repo, release.TagName)
 		}
 
+		wasRemoved := t.pkg.Removed
 		if !t.pkg.Removed && t.pkg.CurrentVersion != "" {
 			st.SetUpgrade(repoKey, release.TagName, asset.Name, destPath, releaseURL)
 		} else {
 			st.SetInstall(repoKey, t.owner, t.repo, release.TagName, asset.Name, destPath, releaseURL, arch.DpkgArch, pkgName)
 		}
 		upgraded++
-		fmt.Printf(T("✅ 升级完成: %s %s\n", "✅ Upgrade complete: %s %s\n"), repoKey, release.TagName)
+		if wasRemoved {
+			fmt.Printf(T("✅ 重新安装完成: %s %s\n", "✅ Reinstall complete: %s %s\n"), repoKey, release.TagName)
+		} else {
+			fmt.Printf(T("✅ 升级完成: %s %s\n", "✅ Upgrade complete: %s %s\n"), repoKey, release.TagName)
+		}
 	}
 
 	if saveErr := st.Save(); saveErr != nil {

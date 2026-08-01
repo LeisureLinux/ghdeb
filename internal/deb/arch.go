@@ -80,3 +80,14 @@ func ExtractPkgName(debPath string) string {
 	}
 	return strings.TrimSpace(string(out))
 }
+
+// IsPackageInstalled 检查 deb 包是否已安装
+func IsPackageInstalled(pkgName string) bool {
+	cmd := exec.Command("dpkg-query", "-W", "-f=${Status}", pkgName)
+	output, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	// dpkg-query 输出 "install ok installed" 表示已安装
+	return strings.Contains(string(output), "install ok installed")
+}
