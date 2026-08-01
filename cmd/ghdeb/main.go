@@ -16,9 +16,12 @@ import (
 	"github.com/leisurelinux/ghdeb/internal/state"
 )
 
-const version = "0.3.11"
+const version = "0.3.12"
 
 func main() {
+	// 显示版本信息
+	fmt.Printf(T("ghdeb v%s - 轻量级 orphan deb 升级工具 © LeisureLinux\n", "ghdeb v%s - a lightweight orphan deb upgrader © LeisureLinux\n"), version)
+
 	if len(os.Args) < 2 {
 		printUsage()
 		os.Exit(1)
