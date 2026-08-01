@@ -43,6 +43,8 @@ func main() {
 		err = cmdRemove(args)
 	case "set-repo":
 		err = cmdSetRepo(args)
+	case "test-homepage":
+		err = cmdTestHomepage(args)
 	case "info":
 		err = cmdInfo(args)
 	case "version", "--version", "-v":
@@ -67,7 +69,8 @@ func printUsage() {
 用法:
   ghdeb install <owner/repo>[@tag]   安装（或升级到）指定版本
   ghdeb upgrade [owner/repo]         升级包（自动扫描 orphan，不指定则升级所有）
-  ghdeb scan                         扫描系统中的 GitHub orphan 包并纳入管理
+  ghdeb scan [--deep]                扫描系统中的 GitHub orphan 包并纳入管理
+                                     --deep: 抓取 Homepage 页面查找 GitHub 链接
   ghdeb list                         列出所有包（含已移除）
   ghdeb history <owner/repo>         查看某包的完整操作历史
   ghdeb remove <owner/repo>          标记移除（保留历史记录）
@@ -80,7 +83,8 @@ func printUsage() {
 
 示例:
   ghdeb install sharkdp/bat          安装 bat 最新版
-  ghdeb scan                         扫描系统中的 GitHub orphan 包并纳入管理
+  ghdeb scan [--deep]                扫描系统中的 GitHub orphan 包并纳入管理
+                                     --deep: 抓取 Homepage 页面查找 GitHub 链接
   ghdeb upgrade                      升级所有已管理的包
   ghdeb history sharkdp/bat          查看 bat 的安装/升级/移除历史
   ghdeb set-repo draw.io jgraph/drawio  设置 draw.io 的仓库
@@ -169,7 +173,7 @@ func cmdUpgrade(args []string) error {
 	// 升级前自动扫描 orphan 包
 	if len(args) == 0 {
 		fmt.Println("🔍 扫描系统中的 GitHub orphan 包...")
-		orphans, scanErr := state.ScanOrphans()
+		orphans, scanErr := state.ScanOrphans(false, nil)
 		if scanErr != nil {
 			fmt.Fprintf(os.Stderr, "⚠️  扫描失败: %v\n", scanErr)
 		} else if len(orphans) > 0 {
@@ -325,8 +329,26 @@ func cmdScan(args []string) error {
 		return err
 	}
 
-	fmt.Println("🔍 扫描系统中的 orphan 包（无 apt 源）...")
-	pkgs, scanErr := state.ScanOrphans()
+	// 解析参数
+	deepScan := false
+	for _, arg := range args {
+		if arg == "--deep" {
+			deepScan = true
+		}
+	}
+
+	if deepScan {
+		fmt.Println("🔍 深度扫描系统中的 orphan 包（抓取 Homepage 查找 GitHub 链接）...")
+	} else {
+		fmt.Println("🔍 扫描系统中的 orphan 包（无 apt 源）...")
+		fmt.Println("   提示: 使用 --deep 参数可尝试从 Homepage 页面中查找 GitHub 链接")
+	}
+
+	progress := func(msg string) {
+		fmt.Println(msg)
+	}
+
+	pkgs, scanErr := state.ScanOrphans(deepScan, progress)
 	if scanErr != nil {
 		return fmt.Errorf("扫描失败: %w", scanErr)
 	}
@@ -579,6 +601,22 @@ func cmdSetRepo(args []string) error {
 	}
 
 	fmt.Printf("✅ 已设置 %s 的仓库为 %s/%s\n", pkgName, owner, repo)
+	return nil
+}
+
+// --- test-homepage ---
+
+func cmdTestHomepage(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("用法: ghdeb test-homepage <url>")
+	}
+	url := args[0]
+	fmt.Printf("测试: %s\n", url)
+	owner, repo, err := state.FindGitHubFromHomepage(url)
+	if err != nil {
+		return fmt.Errorf("错误: %w", err)
+	}
+	fmt.Printf("找到: %s/%s\n", owner, repo)
 	return nil
 }
 

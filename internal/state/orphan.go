@@ -2,6 +2,7 @@ package state
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"os/exec"
 	"regexp"
@@ -19,16 +20,18 @@ type DpkgPackage struct {
 
 // OrphanPackage orphan 包信息
 type OrphanPackage struct {
-	PkgName  string // deb 包名（如 "bat"）
-	Version  string
-	Owner    string // GitHub owner（从 Homepage 解析，可能为空）
-	Repo     string // GitHub repo（从 Homepage 解析，可能为空）
-	Homepage string
-	HasGitHub bool  // 是否能从 Homepage 识别出 GitHub 仓库
+	PkgName       string // deb 包名（如 "bat"）
+	Version       string
+	Owner         string // GitHub owner（从 Homepage 解析，可能为空）
+	Repo          string // GitHub repo（从 Homepage 解析，可能为空）
+	Homepage      string
+	HasGitHub     bool   // 是否能从 Homepage 识别出 GitHub 仓库
+	DeepScanError string // 深度扫描的错误信息（如果有）
 }
 
 // ScanOrphans 扫描系统中所有 orphan 包
-func ScanOrphans() ([]OrphanPackage, error) {
+// deepScan: 是否对非 GitHub Homepage 进行深度扫描（抓取页面查找 GitHub 链接）
+func ScanOrphans(deepScan bool, progress func(string)) ([]OrphanPackage, error) {
 	// 1. 快速获取所有 orphan 包名
 	orphanPkgs, err := getOrphanPackages()
 	if err != nil {
@@ -71,6 +74,19 @@ func ScanOrphans() ([]OrphanPackage, error) {
 				orphan.Owner = matches[1]
 				orphan.Repo = matches[2]
 				orphan.HasGitHub = true
+			} else if deepScan {
+				// 深度扫描：尝试从页面中查找 GitHub 链接
+				if progress != nil {
+					progress(fmt.Sprintf("🔍 深度扫描 %s (%s)...", pkgName, pkg.Homepage))
+				}
+				owner, repo, err := FindGitHubFromHomepage(pkg.Homepage)
+				if err == nil {
+					orphan.Owner = owner
+					orphan.Repo = repo
+					orphan.HasGitHub = true
+				} else {
+					orphan.DeepScanError = err.Error()
+				}
 			}
 		}
 
