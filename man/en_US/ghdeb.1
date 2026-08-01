@@ -1,4 +1,4 @@
-.TH GHDEB 1 "2026-08-01" "ghdeb 0.3.14" "User Commands"
+.TH GHDEB 1 "2026-08-01" "ghdeb 0.3.15" "User Commands"
 .SH NAME
 ghdeb \- Install .deb packages from GitHub Releases
 .SH SYNOPSIS
@@ -125,17 +125,17 @@ Success.
 Error (invalid arguments, network failure, install failure, etc.).
 .SH EXAMPLES
 .TP
-.B ghdeb install sharkdp/bat
-Install the latest version of bat.
+.B ghdeb install LeisureLinux/ghdeb
+Install the latest version of ghdeb.
 .TP
-.B ghdeb install sharkdp/bat@v0.25.0
-Install a specific version of bat.
+.B ghdeb install LeisureLinux/ghdeb@v0.3.15
+Install a specific version of ghdeb.
 .TP
 .B ghdeb upgrade
 Upgrade all managed packages.
 .TP
-.B ghdeb upgrade sharkdp/bat
-Upgrade only bat.
+.B ghdeb upgrade LeisureLinux/ghdeb
+Upgrade only ghdeb.
 .TP
 .B ghdeb scan --deep
 Scan for orphan packages, fetching Homepages for GitHub links.
@@ -143,7 +143,7 @@ Scan for orphan packages, fetching Homepages for GitHub links.
 .B ghdeb list --refresh
 List all packages, forcing a fresh check of latest versions.
 .TP
-.B ghdeb set\-repo draw.io jgraph/drawio
+.B ghdeb set\-repo ghdeb LeisureLinux/ghdeb
 Assign a GitHub repo to a previously scanned package.
 Configuration file (JSON format):
 .TP

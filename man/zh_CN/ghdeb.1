@@ -1,4 +1,4 @@
-.TH GHDEB 1 "2026-08-01" "ghdeb 0.3.14" "用户命令"
+.TH GHDEB 1 "2026-08-01" "ghdeb 0.3.15" "用户命令"
 .SH 名称
 ghdeb \- 从 GitHub Releases 安装 .deb 包
 .SH 概要
@@ -115,17 +115,17 @@ Release 版本缓存（24 小时 TTL）。
 错误（参数无效、网络失败、安装失败等）。
 .SH 示例
 .TP
-.B ghdeb install sharkdp/bat
-安装 bat 最新版。
+.B ghdeb install LeisureLinux/ghdeb
+安装 ghdeb 最新版。
 .TP
-.B ghdeb install sharkdp/bat@v0.25.0
-安装 bat 指定版本。
+.B ghdeb install LeisureLinux/ghdeb@v0.3.15
+安装 ghdeb 指定版本。
 .TP
 .B ghdeb upgrade
 升级所有已管理的包。
 .TP
-.B ghdeb upgrade sharkdp/bat
-仅升级 bat。
+.B ghdeb upgrade LeisureLinux/ghdeb
+仅升级 ghdeb。
 .TP
 .B ghdeb scan --deep
 扫描 orphan 包，抓取 Homepage 查找 GitHub 链接。
@@ -133,7 +133,7 @@ Release 版本缓存（24 小时 TTL）。
 .B ghdeb list --refresh
 列出所有包，强制刷新最新版本检查。
 .TP
-.B ghdeb set\-repo draw.io jgraph/drawio
+.B ghdeb set\-repo ghdeb LeisureLinux/ghdeb
 为之前扫描的包分配 GitHub 仓库。
 .SH 参见
 .BR dpkg (1),

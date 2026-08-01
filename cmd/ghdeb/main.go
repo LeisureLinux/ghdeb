@@ -16,7 +16,7 @@ import (
 	"github.com/leisurelinux/ghdeb/internal/state"
 )
 
-const version = "0.3.14"
+const version = "0.3.15"
 
 func main() {
 	// 显示版本信息
@@ -91,12 +91,12 @@ Shell 补全:
     zsh:  compinit
 
 示例:
-  ghdeb install sharkdp/bat          安装 bat 最新版
+  ghdeb install LeisureLinux/ghdeb    安装 ghdeb 最新版
   ghdeb scan [--deep]                扫描系统中的 GitHub 孤立包并纳入管理
                                      --deep: 抓取 Homepage 页面查找 GitHub 链接
   ghdeb upgrade                      升级所有已管理的包
-  ghdeb history sharkdp/bat          查看 bat 的安装/升级/移除历史
-  ghdeb set-repo draw.io jgraph/drawio  设置 draw.io 的仓库
+  ghdeb history LeisureLinux/ghdeb    查看 ghdeb 的安装/升级/移除历史
+  ghdeb set-repo ghdeb LeisureLinux/ghdeb  设置 ghdeb 的仓库
 `)
 	} else {
 		fmt.Print(`ghdeb - Install .deb packages from GitHub Releases
@@ -122,12 +122,12 @@ Shell Completion:
     zsh:  compinit
 
 Examples:
-  ghdeb install sharkdp/bat          Install latest bat
+  ghdeb install LeisureLinux/ghdeb    Install latest ghdeb
   ghdeb scan [--deep]                Scan system for GitHub orphan packages
                                      --deep: Fetch Homepage to find GitHub links
   ghdeb upgrade                      Upgrade all managed packages
-  ghdeb history sharkdp/bat          View bat's install/upgrade/remove history
-  ghdeb set-repo draw.io jgraph/drawio  Set draw.io's repository
+  ghdeb history LeisureLinux/ghdeb    View ghdeb's install/upgrade/remove history
+  ghdeb set-repo ghdeb LeisureLinux/ghdeb  Set ghdeb's repository
 `)
 	}
 }
@@ -136,7 +136,7 @@ Examples:
 
 func cmdInstall(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("请指定仓库，如: ghdeb install sharkdp/bat")
+		return fmt.Errorf("请指定仓库，如: ghdeb install LeisureLinux/ghdeb")
 	}
 
 	repoStr, tag := parseRepoSpec(args[0])
@@ -590,7 +590,7 @@ func cmdList(args []string) error {
 
 func cmdHistory(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("请指定仓库，如: ghdeb history sharkdp/bat")
+		return fmt.Errorf("请指定仓库，如: ghdeb history LeisureLinux/ghdeb")
 	}
 	st, err := state.Load()
 	if err != nil {
@@ -648,7 +648,7 @@ func cmdHistory(args []string) error {
 
 func cmdRemove(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("请指定仓库，如: ghdeb remove sharkdp/bat")
+		return fmt.Errorf("请指定仓库，如: ghdeb remove LeisureLinux/ghdeb")
 	}
 	st, err := state.Load()
 	if err != nil {
@@ -715,7 +715,7 @@ func cmdTestHomepage(args []string) error {
 
 func cmdInfo(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf(T("请指定包名或仓库，如: ghdeb info rustdesk 或 ghdeb info rustdesk/rustdesk", "Please specify a package name or repo, e.g.: ghdeb info rustdesk or ghdeb info rustdesk/rustdesk"))
+		return fmt.Errorf(T("请指定包名或仓库，如: ghdeb info ghdeb 或 ghdeb info LeisureLinux/ghdeb", "Please specify a package name or repo, e.g.: ghdeb info ghdeb or ghdeb info LeisureLinux/ghdeb"))
 	}
 	
 	var owner, repo string

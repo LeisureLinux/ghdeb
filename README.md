@@ -3,14 +3,14 @@
 从 GitHub Releases 一键安装/升级 `.deb` 包。
 
 ```
-ghdeb install sharkdp/bat      # 安装 bat 最新版
+ghdeb install LeisureLinux/ghdeb      # 安装 ghdeb 最新版
 ghdeb upgrade                  # 升级所有已安装的包
 ghdeb list                     # 查看已安装列表
 ```
 
 ## 为什么需要这个工具？
 
-很多优秀的 CLI 工具（bat、fd、ripgrep、gh 等）在 GitHub Releases 提供 `.deb` 包，但安装流程繁琐：
+很多优秀的 CLI 工具（ghdeb、fd、ripgrep 等）在 GitHub Releases 提供 `.deb` 包，但安装流程繁琐：
 
 1. 打开 GitHub releases 页面
 2. 找到最新的 `.deb` 文件
@@ -38,10 +38,10 @@ go install github.com/leisurelinux/ghdeb/cmd/ghdeb@latest
 
 ```bash
 # 安装最新版
-ghdeb install sharkdp/bat
+ghdeb install LeisureLinux/ghdeb
 
 # 安装指定版本
-ghdeb install sharkdp/bat@v0.25.0
+ghdeb install LeisureLinux/ghdeb@v0.3.14
 
 # 安装 GitHub CLI
 ghdeb install cli/cli
@@ -54,7 +54,7 @@ ghdeb install cli/cli
 ghdeb upgrade
 
 # 只升级某个包
-ghdeb upgrade sharkdp/bat
+ghdeb upgrade LeisureLinux/ghdeb
 ```
 
 ### 查看信息
@@ -71,7 +71,7 @@ ghdeb list
 
 ```bash
 # 移除安装记录（不卸载软件本身）
-ghdeb remove sharkdp/bat
+ghdeb remove LeisureLinux/ghdeb
 ```
 
 ## 工作原理
