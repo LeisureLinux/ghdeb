@@ -36,7 +36,7 @@ func main() {
 	case "scan":
 		err = cmdScan(args)
 	case "list", "ls":
-		err = cmdList()
+		err = cmdList(args)
 	case "history":
 		err = cmdHistory(args)
 	case "remove", "rm":
@@ -71,7 +71,7 @@ func printUsage() {
   ghdeb upgrade [owner/repo]         升级包（自动扫描 orphan，不指定则升级所有）
   ghdeb scan [--deep]                扫描系统中的 GitHub orphan 包并纳入管理
                                      --deep: 抓取 Homepage 页面查找 GitHub 链接
-  ghdeb list                         列出所有包（含已移除）
+  ghdeb list [--refresh]             列出所有包（含已移除），--refresh 强制刷新版本缓存
   ghdeb history <owner/repo>         查看某包的完整操作历史
   ghdeb remove <owner/repo>          标记移除（保留历史记录）
   ghdeb set-repo <pkg> <owner/repo>  为包设置 GitHub 仓库
@@ -260,6 +260,8 @@ func cmdUpgrade(args []string) error {
 			fmt.Fprintf(os.Stderr, "⚠️  获取 release 失败: %v\n", getErr)
 			continue
 		}
+		// 升级时获取到的版本写入缓存
+		client.SetCachedRelease(t.owner, t.repo, release.TagName)
 
 		if t.pkg.CurrentVersion == release.TagName && !t.pkg.Removed {
 			fmt.Printf("✅ 已是最新版本 %s\n", release.TagName)
@@ -416,7 +418,15 @@ func cmdScan(args []string) error {
 
 // --- list ---
 
-func cmdList() error {
+func cmdList(args []string) error {
+	// 检查是否强制刷新缓存
+	refresh := false
+	for _, a := range args {
+		if a == "--refresh" || a == "-r" {
+			refresh = true
+		}
+	}
+
 	st, err := state.Load()
 	if err != nil {
 		return err
@@ -432,6 +442,11 @@ func cmdList() error {
 	fmt.Println(strings.Repeat("-", 110))
 
 	client := gh.NewClient()
+
+	// 强制刷新时清除全部缓存
+	if refresh {
+		gh.InvalidateCache("", "")
+	}
 
 	// 按包名排序
 	sort.Slice(records, func(i, j int) bool {
@@ -451,15 +466,24 @@ func cmdList() error {
 			sysVer = "-"
 		}
 
-		// 获取最新版本
+		// 获取最新版本：优先读缓存，缓存未命中才请求 API
 		latestVer := "-"
 		if !r.Removed && r.Owner != "" && r.Repo != "" {
-			release, err := client.GetLatestRelease(r.Owner, r.Repo)
-			if err == nil {
-				latestVer = release.TagName
-				if latestVer != r.CurrentVersion {
-					status = "🔄 可升级"
+			// 先查缓存
+			cached := client.GetCachedRelease(r.Owner, r.Repo)
+			if cached != "" {
+				latestVer = cached
+			} else {
+				// 缓存未命中，请求 API
+				release, apiErr := client.GetLatestRelease(r.Owner, r.Repo)
+				if apiErr == nil {
+					latestVer = release.TagName
+					// 写入缓存
+					client.SetCachedRelease(r.Owner, r.Repo, release.TagName)
 				}
+			}
+			if latestVer != "-" && latestVer != r.CurrentVersion {
+				status = "🔄 可升级"
 			}
 		}
 
