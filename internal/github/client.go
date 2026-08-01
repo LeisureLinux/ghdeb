@@ -226,6 +226,13 @@ func (c *Client) downloadOnce(asset Asset, destPath string, progress func(downlo
 
 	// 206 = 服务器支持断点续传，从已有位置继续
 	// 200 = 服务器不支持 Range，需要重新下载
+	// 416 = Range Not Satisfiable，本地文件可能已完整或损坏，需要删除后重新下载
+	if resp.StatusCode == 416 {
+		// 删除本地文件，重新下载
+		os.Remove(destPath)
+		return fmt.Errorf(
+			i18n.T("断点续传失败，重新下载", "range not satisfiable, restarting download"))
+	}
 	if resp.StatusCode != 200 && resp.StatusCode != 206 {
 		return fmt.Errorf(
 			i18n.T("下载返回 HTTP %d", "download returned HTTP %d"),
@@ -287,7 +294,7 @@ func isRetryable(err error) bool {
 		"timeout", "deadline exceeded", "cancellation",
 		"connection reset", "connection refused",
 		"EOF", "broken pipe", "no such host",
-		"TLS handshake", "i/o timeout",
+		"TLS handshake", "i/o timeout", "range not satisfiable", "断点续传失败",
 	}
 	for _, p := range retryablePatterns {
 		if strings.Contains(msg, p) {

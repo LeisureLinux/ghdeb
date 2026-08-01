@@ -16,7 +16,7 @@ import (
 	"github.com/leisurelinux/ghdeb/internal/state"
 )
 
-const version = "0.3.6"
+const version = "0.3.7"
 
 func main() {
 	if len(os.Args) < 2 {
