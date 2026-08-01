@@ -176,8 +176,18 @@ func cmdUpgrade(args []string) error {
 			if added > 0 {
 				fmt.Printf("📦 发现 %d 个新的 GitHub orphan 包，已纳入管理\n", added)
 				for _, o := range orphans {
-					if st.Get(o.Owner+"/"+o.Repo) != nil && st.Get(o.Owner+"/"+o.Repo).UpdatedAt == "auto-discovered" {
-						fmt.Printf("   + %s/%s (%s)\n", o.Owner, o.Repo, o.Version)
+					var repoKey string
+					if o.HasGitHub {
+						repoKey = o.Owner + "/" + o.Repo
+					} else {
+						repoKey = o.PkgName
+					}
+					if st.Get(repoKey) != nil && st.Get(repoKey).UpdatedAt == "auto-discovered" {
+						if o.HasGitHub {
+							fmt.Printf("   + %s/%s (%s)\n", o.Owner, o.Repo, o.Version)
+						} else {
+							fmt.Printf("   + %s (%s)\n", o.PkgName, o.Version)
+						}
 					}
 				}
 				if saveErr := st.Save(); saveErr != nil {
@@ -188,17 +198,45 @@ func cmdUpgrade(args []string) error {
 		fmt.Println()
 	}
 
-	var repos []string
+	// 解析参数：支持包名或 owner/repo
+	type upgradeTarget struct {
+		owner string
+		repo  string
+		pkg   *state.PackageRecord
+	}
+	var targets []upgradeTarget
+
 	if len(args) > 0 {
-		repos = args
+		for _, arg := range args {
+			// 先尝试作为 owner/repo 解析
+			owner, repo, parseErr := gh.ParseRepo(arg)
+			if parseErr == nil {
+				repoKey := owner + "/" + repo
+				rec := st.Get(repoKey)
+				if rec != nil {
+					targets = append(targets, upgradeTarget{owner: owner, repo: repo, pkg: rec})
+					continue
+				}
+			}
+			// 尝试作为包名查找
+			rec := st.GetByPkgName(arg)
+			if rec != nil && rec.Owner != "" && rec.Repo != "" {
+				targets = append(targets, upgradeTarget{owner: rec.Owner, repo: rec.Repo, pkg: rec})
+			} else {
+				fmt.Fprintf(os.Stderr, "⚠️  跳过 %s: 未找到该包或无仓库信息\n", arg)
+			}
+		}
 	} else {
 		for _, r := range st.ListActive() {
-			repos = append(repos, r.Owner+"/"+r.Repo)
+			if r.Owner != "" && r.Repo != "" {
+				targets = append(targets, upgradeTarget{owner: r.Owner, repo: r.Repo, pkg: r})
+			}
 		}
-		if len(repos) == 0 {
-			fmt.Println("没有已管理的包需要升级")
-			return nil
-		}
+	}
+
+	if len(targets) == 0 {
+		fmt.Println("没有已管理的包需要升级")
+		return nil
 	}
 
 	client := gh.NewClient()
@@ -208,28 +246,22 @@ func cmdUpgrade(args []string) error {
 	}
 
 	upgraded := 0
-	for _, repoStr := range repos {
-		owner, repo, parseErr := gh.ParseRepo(repoStr)
-		if parseErr != nil {
-			fmt.Fprintf(os.Stderr, "⚠️  跳过 %s: %v\n", repoStr, parseErr)
-			continue
-		}
-		repoKey := owner + "/" + repo
+	for _, t := range targets {
+		repoKey := t.owner + "/" + t.repo
 
 		fmt.Printf("\n🔍 检查 %s...\n", repoKey)
-		release, getErr := client.GetLatestRelease(owner, repo)
+		release, getErr := client.GetLatestRelease(t.owner, t.repo)
 		if getErr != nil {
 			fmt.Fprintf(os.Stderr, "⚠️  获取 release 失败: %v\n", getErr)
 			continue
 		}
 
-		existing := st.Get(repoKey)
-		if existing != nil && existing.CurrentVersion == release.TagName && !existing.Removed {
+		if t.pkg.CurrentVersion == release.TagName && !t.pkg.Removed {
 			fmt.Printf("✅ 已是最新版本 %s\n", release.TagName)
 			continue
 		}
-		if existing != nil && !existing.Removed {
-			fmt.Printf("📦 发现新版本: %s → %s\n", existing.CurrentVersion, release.TagName)
+		if !t.pkg.Removed {
+			fmt.Printf("📦 发现新版本: %s → %s\n", t.pkg.CurrentVersion, release.TagName)
 		} else {
 			fmt.Printf("📦 新版本: %s\n", release.TagName)
 		}
@@ -260,13 +292,13 @@ func cmdUpgrade(args []string) error {
 
 		releaseURL := release.HTMLURL
 		if releaseURL == "" {
-			releaseURL = fmt.Sprintf("https://github.com/%s/%s/releases/tag/%s", owner, repo, release.TagName)
+			releaseURL = fmt.Sprintf("https://github.com/%s/%s/releases/tag/%s", t.owner, t.repo, release.TagName)
 		}
 
-		if existing != nil && !existing.Removed && existing.CurrentVersion != "" {
+		if !t.pkg.Removed && t.pkg.CurrentVersion != "" {
 			st.SetUpgrade(repoKey, release.TagName, asset.Name, destPath, releaseURL)
 		} else {
-			st.SetInstall(repoKey, owner, repo, release.TagName, asset.Name, destPath, releaseURL, arch.DpkgArch, pkgName)
+			st.SetInstall(repoKey, t.owner, t.repo, release.TagName, asset.Name, destPath, releaseURL, arch.DpkgArch, pkgName)
 		}
 		upgraded++
 		fmt.Printf("✅ 升级完成: %s %s\n", repoKey, release.TagName)
@@ -373,25 +405,34 @@ func cmdList() error {
 		return nil
 	}
 
-	fmt.Printf("%-35s %-12s %-12s %-10s %-19s\n", "包名:仓库slug", "安装版本", "系统版本", "状态", "最后操作")
-	fmt.Println(strings.Repeat("-", 95))
+	fmt.Printf("%-35s %-12s %-12s %-12s %-10s %-19s\n", "包名:仓库slug", "安装版本", "系统版本", "最新版本", "状态", "最后操作")
+	fmt.Println(strings.Repeat("-", 110))
+
+	client := gh.NewClient()
+
 	for _, r := range records {
-		r.RefreshSystemInfo(r.Repo)
+		r.RefreshSystemInfo(r.PkgName)
 
 		status := "✅ installed"
 		if r.Removed {
 			status = "❌ removed"
 		}
-		// 检查是否有新版本（需要调用 GitHub API）
-		if !r.Removed && r.Owner != "" && r.Repo != "" {
-			if isUpgradeAvailable(r) {
-				status = "🔄 可升级"
-			}
-		}
 
 		sysVer := r.SystemVersion
 		if sysVer == "" {
 			sysVer = "-"
+		}
+
+		// 获取最新版本
+		latestVer := "-"
+		if !r.Removed && r.Owner != "" && r.Repo != "" {
+			release, err := client.GetLatestRelease(r.Owner, r.Repo)
+			if err == nil {
+				latestVer = release.TagName
+				if latestVer != r.CurrentVersion {
+					status = "🔄 可升级"
+				}
+			}
 		}
 
 		updatedAt := r.UpdatedAt
@@ -414,10 +455,11 @@ func cmdList() error {
 		}
 		pkgSlug := r.PkgName + ":" + repoPart
 
-		fmt.Printf("%-35s %-12s %-12s %-10s %-19s\n",
+		fmt.Printf("%-35s %-12s %-12s %-12s %-10s %-19s\n",
 			pkgSlug,
 			r.CurrentVersion,
 			sysVer,
+			latestVer,
 			status,
 			updatedAt,
 		)
@@ -687,15 +729,6 @@ func formatTime(s string) string {
 	return t.Format("2006-01-02 15:04:05")
 }
 
-// isUpgradeAvailable 检查是否有新版本
-func isUpgradeAvailable(r *state.PackageRecord) bool {
-	client := gh.NewClient()
-	release, err := client.GetLatestRelease(r.Owner, r.Repo)
-	if err != nil {
-		return false
-	}
-	return release.TagName != r.CurrentVersion
-}
 
 func truncate(s string, maxLen int) string {
 	if len(s) <= maxLen {
