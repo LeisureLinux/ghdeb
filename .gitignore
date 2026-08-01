@@ -1,0 +1,17 @@
+# 编译产物（仅根目录）
+/ghdeb
+*.exe
+*.o
+*.a
+*.so
+*.dylib
+
+# Go
+vendor/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
