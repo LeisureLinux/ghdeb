@@ -82,6 +82,11 @@ func printUsage() {
 环境变量:
   GITHUB_TOKEN / GH_TOKEN            GitHub 个人访问令牌（提高 API 限额）
 
+Shell 补全:
+  安装后自动加载，或手动 source:
+    bash: source /usr/share/bash-completion/completions/ghdeb
+    zsh:  compinit
+
 示例:
   ghdeb install sharkdp/bat          安装 bat 最新版
   ghdeb scan [--deep]                扫描系统中的 GitHub orphan 包并纳入管理
@@ -107,6 +112,11 @@ Usage:
 
 Environment Variables:
   GITHUB_TOKEN / GH_TOKEN            GitHub personal access token (increases API rate limit)
+
+Shell Completion:
+  Auto-loaded after installation, or manually source:
+    bash: source /usr/share/bash-completion/completions/ghdeb
+    zsh:  compinit
 
 Examples:
   ghdeb install sharkdp/bat          Install latest bat

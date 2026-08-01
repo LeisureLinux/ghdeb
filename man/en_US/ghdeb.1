@@ -1,4 +1,4 @@
-.TH GHDEB 1 "2026-08-01" "ghdeb 0.3.3" "User Commands"
+.TH GHDEB 1 "2026-08-01" "ghdeb 0.3.4" "User Commands"
 .SH NAME
 ghdeb \- Install .deb packages from GitHub Releases
 .SH SYNOPSIS
@@ -145,6 +145,40 @@ List all packages, forcing a fresh check of latest versions.
 .TP
 .B ghdeb set\-repo draw.io jgraph/drawio
 Assign a GitHub repo to a previously scanned package.
+.SH SHELL COMPLETION
+.B ghdeb
+provides shell completion scripts for bash and zsh. After installation,
+completions are automatically available for new shells. For existing shells:
+.PP
+.B bash:
+source /usr/share/bash-completion/completions/ghdeb
+.br
+or restart your shell.
+.PP
+.B zsh:
+run
+.I compinit
+or restart your shell. Completions are installed to
+.IR /usr/share/zsh/site-functions/_ghdeb .
+.PP
+Completion features:
+.TP
+.B Command completion
+Type
+.I ghdeb
+and press Tab to see available commands.
+.TP
+.B Package completion
+For commands that take package names (upgrade, history, remove, set-repo),
+press Tab to see managed packages from your ghdeb state.
+.TP
+.B Option completion
+Type
+.I ghdeb scan --
+or
+.I ghdeb list --
+and press Tab to see available options.
+
 .SH SEE ALSO
 .BR dpkg (1),
 .BR apt (8)
