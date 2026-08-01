@@ -670,7 +670,7 @@ func cmdTestHomepage(args []string) error {
 
 func cmdInfo(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("请指定仓库，如: ghdeb info sharkdp/bat")
+		return fmt.Errorf(T("请指定仓库，如: ghdeb info sharkdp/bat", "Please specify a repo, e.g.: ghdeb info sharkdp/bat"))
 	}
 	owner, repo, err := gh.ParseRepo(args[0])
 	if err != nil {
@@ -685,27 +685,27 @@ func cmdInfo(args []string) error {
 
 	result, findErr := gh.FindAssetWithFallback(release, arch)
 
-	fmt.Printf("仓库: %s/%s\n", owner, repo)
-	fmt.Printf("最新版本: %s\n", release.TagName)
+	fmt.Printf(T("仓库: %s/%s\n", "Repo: %s/%s\n"), owner, repo)
+	fmt.Printf(T("最新版本: %s\n", "Latest version: %s\n"), release.TagName)
 	if release.Name != "" && release.Name != release.TagName {
-		fmt.Printf("名称: %s\n", release.Name)
+		fmt.Printf(T("名称: %s\n", "Name: %s\n"), release.Name)
 	}
 	if release.HTMLURL != "" {
 		fmt.Printf("Release: %s\n", release.HTMLURL)
 	}
 
 	if result != nil && result.Asset != nil {
-		fmt.Printf("\n✅ 匹配当前架构 %s 的 .deb 文件:\n", arch.DpkgArch)
+		fmt.Printf(T("\n✅ 匹配当前架构 %s 的 .deb 文件:\n", "\n✅ Matched .deb file for arch %s:\n"), arch.DpkgArch)
 		fmt.Printf("  → %s (%s)\n", result.Asset.Name, formatSize(result.Asset.Size))
 	} else {
-		fmt.Printf("\n⚠️  没有匹配当前架构 %s 的 .deb 文件\n", arch.DpkgArch)
+		fmt.Printf(T("\n⚠️  没有匹配当前架构 %s 的 .deb 文件\n", "\n⚠️  No .deb file matched for arch %s\n"), arch.DpkgArch)
 		if findErr != nil {
 			fmt.Printf("   %v\n", findErr)
 		}
 	}
 
 	if result != nil && len(result.Fallbacks) > 0 {
-		fmt.Printf("\n📦 其他可用的安装包（需手动下载安装）:\n")
+		fmt.Printf(T("\n📦 其他可用的安装包（需手动下载安装）:\n", "\n📦 Other available packages (manual download required):\n"))
 		for _, a := range result.Fallbacks {
 			fmt.Printf("  %s (%s)\n", a.Name, formatSize(a.Size))
 			fmt.Printf("    %s\n", a.BrowserDownloadURL)
