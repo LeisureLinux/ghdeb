@@ -17,10 +17,10 @@ import (
 	"github.com/leisurelinux/ghdeb/internal/state"
 )
 
-const version = "0.4.0"
+const version = "0.5.0"
 
 func main() {
-	fmt.Printf(T("ghdeb v%s - 轻量级孤立包 deb 升级工具 © LeisureLinux\n", "ghdeb v%s - a lightweight orphan deb upgrader © LeisureLinux\n"), version)
+	fmt.Printf(T("ghdeb v%s - 管理从 GitHub Releases 下载的 .deb 包 © LeisureLinux\n", "ghdeb v%s - manage .deb packages downloaded from GitHub Releases © LeisureLinux\n"), version)
 
 	if len(os.Args) < 2 {
 		printUsage()
