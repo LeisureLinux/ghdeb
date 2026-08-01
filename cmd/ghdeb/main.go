@@ -756,11 +756,14 @@ func installDeb(path string) error {
 	cmd := exec.Command("sudo", "dpkg", "-i", path)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+	// 设置非交互式前端，避免 debconf 告警
+	cmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
 	if err := cmd.Run(); err != nil {
 		fmt.Printf(T("🔧 尝试修复依赖 (apt-get install -f)...\n", "🔧 Trying to fix dependencies (apt-get install -f)...\n"))
 		fixCmd := exec.Command("sudo", "apt-get", "install", "-f", "-y")
 		fixCmd.Stdout = os.Stdout
 		fixCmd.Stderr = os.Stderr
+		fixCmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
 		if fixErr := fixCmd.Run(); fixErr != nil {
 			return fmt.Errorf("安装失败且依赖修复失败: %w", fixErr)
 		}
