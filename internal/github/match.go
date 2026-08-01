@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/leisurelinux/ghdeb/internal/i18n"
+
 	"github.com/leisurelinux/ghdeb/internal/deb"
 )
 
@@ -42,7 +44,7 @@ func FindDebAsset(release *Release, arch *deb.ArchInfo) (*Asset, error) {
 			Fallbacks: result.Fallbacks,
 		}
 	}
-	return nil, fmt.Errorf("release %s 中没有可用的安装包", release.TagName)
+	return nil, fmt.Errorf(i18n.T("release %s 中没有可用的安装包", "release %s has no available packages"), release.TagName)
 }
 
 // FallbackError 包含备选下载方案的错误
@@ -54,8 +56,8 @@ type FallbackError struct {
 
 func (e *FallbackError) Error() string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("release %s 中没有匹配架构 %s 的 .deb 文件\n", e.Release, e.Arch))
-	sb.WriteString("\n其他可用的安装包:\n")
+	sb.WriteString(fmt.Sprintf(i18n.T("release %s 中没有匹配架构 %s 的 .deb 文件\n", "release %s has no .deb file matching arch %s\n"), e.Release, e.Arch))
+	sb.WriteString(i18n.T("\n其他可用的安装包:\n", "\nOther available packages:\n"))
 	for _, a := range e.Fallbacks {
 		sb.WriteString(fmt.Sprintf("  %s (%s)\n", a.Name, formatSize(a.Size)))
 		sb.WriteString(fmt.Sprintf("    %s\n", a.BrowserDownloadURL))
@@ -79,7 +81,7 @@ func FindAssetWithFallback(release *Release, arch *deb.ArchInfo) (*MatchResult, 
 	}
 
 	if len(allAssets) == 0 {
-		return nil, fmt.Errorf("release %s 中没有可用的安装包（.deb/.tar.gz/.AppImage）", release.TagName)
+		return nil, fmt.Errorf(i18n.T("release %s 中没有可用的安装包（.deb/.tar.gz/.AppImage）", "release %s has no available packages (.deb/.tar.gz/.AppImage)"), release.TagName)
 	}
 
 	// 1. 优先找精确匹配的 .deb（排除变体）

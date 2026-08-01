@@ -58,7 +58,7 @@ func main() {
 	}
 
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "错误: %v\n", err)
+		fmt.Fprintf(os.Stderr, "%s: %v\n", T("错误", "Error"), err)
 		os.Exit(1)
 	}
 }
@@ -108,14 +108,14 @@ func cmdInstall(args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("🔍 系统架构: %s\n", arch.DpkgArch)
+	fmt.Printf(T("🔍 系统架构: %s\n", "🔍 System arch: %s\n"), arch.DpkgArch)
 
 	client := gh.NewClient()
 	release, err := fetchRelease(client, owner, repo, tag)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("📌 版本: %s\n", release.TagName)
+	fmt.Printf(T("📌 版本: %s\n", "📌 Version: %s\n"), release.TagName)
 
 	st, err := state.Load()
 	if err != nil {
@@ -123,7 +123,7 @@ func cmdInstall(args []string) error {
 	}
 	repoKey := owner + "/" + repo
 	if existing := st.Get(repoKey); existing != nil && existing.CurrentVersion == release.TagName && !existing.Removed {
-		fmt.Printf("✅ %s 已安装版本 %s，无需重复安装\n", repo, release.TagName)
+		fmt.Printf(T("✅ %s 已安装版本 %s，无需重复安装\n", "✅ %s version %s already installed, no need to reinstall\n"), repo, release.TagName)
 		return nil
 	}
 
@@ -135,7 +135,7 @@ func cmdInstall(args []string) error {
 		}
 		return err
 	}
-	fmt.Printf("📥 匹配文件: %s (%s)\n", asset.Name, formatSize(asset.Size))
+	fmt.Printf(T("📥 匹配文件: %s (%s)\n", "📥 Matched file: %s (%s)\n"), asset.Name, formatSize(asset.Size))
 
 	destPath, err := downloadAsset(client, *asset)
 	if err != nil {
@@ -158,7 +158,7 @@ func cmdInstall(args []string) error {
 		return fmt.Errorf("保存状态失败: %w", err)
 	}
 
-	fmt.Printf("🎉 安装完成: %s %s\n", repoKey, release.TagName)
+	fmt.Printf(T("🎉 安装完成: %s %s\n", "🎉 Install complete: %s %s\n"), repoKey, release.TagName)
 	return nil
 }
 
@@ -172,14 +172,14 @@ func cmdUpgrade(args []string) error {
 
 	// 升级前自动扫描 orphan 包
 	if len(args) == 0 {
-		fmt.Println("🔍 扫描系统中的 GitHub orphan 包...")
+		fmt.Println(T("🔍 扫描系统中的 GitHub orphan 包...", "🔍 Scanning GitHub orphan packages..."))
 		orphans, scanErr := state.ScanOrphans(false, nil)
 		if scanErr != nil {
-			fmt.Fprintf(os.Stderr, "⚠️  扫描失败: %v\n", scanErr)
+			fmt.Fprintf(os.Stderr, "⚠️  %s: %v\n", T("扫描失败", "Scan failed"), scanErr)
 		} else if len(orphans) > 0 {
 			added := state.MergeOrphansToState(st, orphans)
 			if added > 0 {
-				fmt.Printf("📦 发现 %d 个新的 GitHub orphan 包，已纳入管理\n", added)
+				fmt.Printf(T("📦 发现 %d 个新的 GitHub orphan 包，已纳入管理\n", "📦 Found %d new GitHub orphan packages, added to management\n"), added)
 				for _, o := range orphans {
 					var repoKey string
 					if o.HasGitHub {
@@ -196,7 +196,7 @@ func cmdUpgrade(args []string) error {
 					}
 				}
 				if saveErr := st.Save(); saveErr != nil {
-					fmt.Fprintf(os.Stderr, "⚠️  保存状态失败: %v\n", saveErr)
+					fmt.Fprintf(os.Stderr, "⚠️  %s: %v\n", T("保存状态失败", "Save state failed"), saveErr)
 				}
 			}
 		}
@@ -228,7 +228,7 @@ func cmdUpgrade(args []string) error {
 			if rec != nil && rec.Owner != "" && rec.Repo != "" {
 				targets = append(targets, upgradeTarget{owner: rec.Owner, repo: rec.Repo, pkg: rec})
 			} else {
-				fmt.Fprintf(os.Stderr, "⚠️  跳过 %s: 未找到该包或无仓库信息\n", arg)
+				fmt.Fprintf(os.Stderr, "⚠️  %s %s: %s\n", T("跳过", "Skip"), arg, T("未找到该包或无仓库信息", "package not found or no repo info"))
 			}
 		}
 	} else {
@@ -240,7 +240,7 @@ func cmdUpgrade(args []string) error {
 	}
 
 	if len(targets) == 0 {
-		fmt.Println("没有已管理的包需要升级")
+		fmt.Println(T("没有已管理的包需要升级", "No managed packages to upgrade"))
 		return nil
 	}
 
@@ -254,23 +254,23 @@ func cmdUpgrade(args []string) error {
 	for _, t := range targets {
 		repoKey := t.owner + "/" + t.repo
 
-		fmt.Printf("\n🔍 检查 %s...\n", repoKey)
+		fmt.Printf(T("\n🔍 检查 %s...\n", "\n🔍 Checking %s...\n"), repoKey)
 		release, getErr := client.GetLatestRelease(t.owner, t.repo)
 		if getErr != nil {
-			fmt.Fprintf(os.Stderr, "⚠️  获取 release 失败: %v\n", getErr)
+			fmt.Fprintf(os.Stderr, "⚠️  %s: %v\n", T("获取 release 失败", "Get release failed"), getErr)
 			continue
 		}
 		// 升级时获取到的版本写入缓存
 		client.SetCachedRelease(t.owner, t.repo, release.TagName)
 
 		if t.pkg.CurrentVersion == release.TagName && !t.pkg.Removed {
-			fmt.Printf("✅ 已是最新版本 %s\n", release.TagName)
+			fmt.Printf(T("✅ 已是最新版本 %s\n", "✅ Already latest version %s\n"), release.TagName)
 			continue
 		}
 		if !t.pkg.Removed {
-			fmt.Printf("📦 发现新版本: %s → %s\n", t.pkg.CurrentVersion, release.TagName)
+			fmt.Printf(T("📦 发现新版本: %s → %s\n", "📦 New version found: %s → %s\n"), t.pkg.CurrentVersion, release.TagName)
 		} else {
-			fmt.Printf("📦 新版本: %s\n", release.TagName)
+			fmt.Printf(T("📦 新版本: %s\n", "📦 New version: %s\n"), release.TagName)
 		}
 
 		asset, findErr := gh.FindDebAsset(release, arch)
@@ -285,7 +285,7 @@ func cmdUpgrade(args []string) error {
 
 		destPath, dlErr := downloadAsset(client, *asset)
 		if dlErr != nil {
-			fmt.Fprintf(os.Stderr, "⚠️  下载失败: %v\n", dlErr)
+			fmt.Fprintf(os.Stderr, "⚠️  %s: %v\n", T("下载失败", "Download failed"), dlErr)
 			continue
 		}
 
@@ -293,7 +293,7 @@ func cmdUpgrade(args []string) error {
 		pkgName := deb.ExtractPkgName(destPath)
 
 		if instErr := installDeb(destPath); instErr != nil {
-			fmt.Fprintf(os.Stderr, "⚠️  安装失败: %v\n", instErr)
+			fmt.Fprintf(os.Stderr, "⚠️  %s: %v\n", T("安装失败", "Install failed"), instErr)
 			continue
 		}
 
@@ -308,7 +308,7 @@ func cmdUpgrade(args []string) error {
 			st.SetInstall(repoKey, t.owner, t.repo, release.TagName, asset.Name, destPath, releaseURL, arch.DpkgArch, pkgName)
 		}
 		upgraded++
-		fmt.Printf("✅ 升级完成: %s %s\n", repoKey, release.TagName)
+		fmt.Printf(T("✅ 升级完成: %s %s\n", "✅ Upgrade complete: %s %s\n"), repoKey, release.TagName)
 	}
 
 	if saveErr := st.Save(); saveErr != nil {
@@ -316,9 +316,9 @@ func cmdUpgrade(args []string) error {
 	}
 
 	if upgraded == 0 {
-		fmt.Println("\n所有包已是最新")
+		fmt.Println(T("\n所有包已是最新", "\nAll packages are up to date"))
 	} else {
-		fmt.Printf("\n🎉 共升级 %d 个包\n", upgraded)
+		fmt.Printf(T("\n🎉 共升级 %d 个包\n", "\n🎉 Upgraded %d packages\n"), upgraded)
 	}
 	return nil
 }
@@ -340,10 +340,10 @@ func cmdScan(args []string) error {
 	}
 
 	if deepScan {
-		fmt.Println("🔍 深度扫描系统中的 orphan 包（抓取 Homepage 查找 GitHub 链接）...")
+		fmt.Println(T("🔍 深度扫描系统中的 orphan 包（抓取 Homepage 查找 GitHub 链接）...", "🔍 Deep scanning orphan packages (fetching Homepage for GitHub links)..."))
 	} else {
-		fmt.Println("🔍 扫描系统中的 orphan 包（无 apt 源）...")
-		fmt.Println("   提示: 使用 --deep 参数可尝试从 Homepage 页面中查找 GitHub 链接")
+		fmt.Println(T("🔍 扫描系统中的 orphan 包（无 apt 源）...", "🔍 Scanning orphan packages (no apt source)..."))
+		fmt.Println(T("   提示: 使用 --deep 参数可尝试从 Homepage 页面中查找 GitHub 链接", "   Hint: Use --deep to fetch Homepage for GitHub links"))
 	}
 
 	progress := func(msg string) {
@@ -356,13 +356,13 @@ func cmdScan(args []string) error {
 	}
 
 	if len(pkgs) == 0 {
-		fmt.Println("未发现 GitHub 来源的 orphan 包")
+		fmt.Println(T("未发现 GitHub 来源的 orphan 包", "No GitHub-sourced orphan packages found"))
 		return nil
 	}
 
 	// 显示发现的包
-	fmt.Printf("\n发现 %d 个 orphan 包:\n", len(pkgs))
-	fmt.Printf("%-20s %-30s %-12s %-10s %s\n", "包名", "仓库", "版本", "状态", "Homepage")
+	fmt.Printf(T("\n发现 %d 个 orphan 包:\n", "\nFound %d orphan packages:\n"), len(pkgs))
+	fmt.Printf("%-20s %-30s %-12s %-10s %s\n", T("包名", "Package"), T("仓库", "Repo"), T("版本", "Version"), T("状态", "Status"), "Homepage")
 	fmt.Println(strings.Repeat("-", 100))
 
 	newCount := 0
@@ -371,17 +371,17 @@ func cmdScan(args []string) error {
 		if p.HasGitHub {
 			repoSlug = p.Owner + "/" + p.Repo
 		} else {
-			repoSlug = "(待补充)"
+			repoSlug = T("(待补充)", "(pending)")
 		}
 
 		existing := st.GetByPkgName(p.PkgName)
 
-		status := "🆕 未管理"
+		status := "🆕 " + T("未管理", "unmanaged")
 		if existing != nil {
 			if existing.Removed {
-				status = "❌ removed"
+				status = "❌ " + T("removed", "removed")
 			} else {
-				status = "✅ 已管理"
+				status = "✅ " + T("已管理", "managed")
 			}
 		}
 
@@ -400,8 +400,8 @@ func cmdScan(args []string) error {
 
 	// 询问是否纳入管理
 	if newCount > 0 {
-		fmt.Printf("\n📦 其中 %d 个尚未管理\n", newCount)
-		fmt.Print("是否纳入 ghdeb 管理？[y/N] ")
+		fmt.Printf(T("\n📦 其中 %d 个尚未管理\n", "\n📦 %d of them are unmanaged\n"), newCount)
+		fmt.Print(T("是否纳入 ghdeb 管理？[y/N] ", "Add them to ghdeb management? [y/N] "))
 		var answer string
 		fmt.Scanln(&answer)
 		if strings.ToLower(answer) == "y" {
@@ -409,7 +409,7 @@ func cmdScan(args []string) error {
 			if err := st.Save(); err != nil {
 				return fmt.Errorf("保存状态失败: %w", err)
 			}
-			fmt.Printf("✅ 已将 %d 个包纳入管理\n", added)
+			fmt.Printf(T("✅ 已将 %d 个包纳入管理\n", "✅ Added %d packages to management\n"), added)
 		}
 	}
 
@@ -433,12 +433,12 @@ func cmdList(args []string) error {
 	}
 	records := st.List()
 	if len(records) == 0 {
-		fmt.Println("没有已管理的包")
-		fmt.Println("提示: 运行 'ghdeb scan' 扫描系统中的 GitHub 来源包")
+		fmt.Println(T("没有已管理的包", "No managed packages"))
+		fmt.Println(T("提示: 运行 'ghdeb scan' 扫描系统中的 GitHub 来源包", "Hint: Run 'ghdeb scan' to discover GitHub-sourced packages"))
 		return nil
 	}
 
-	fmt.Printf("%-35s %-12s %-12s %-12s %-10s %-19s\n", "包名:仓库slug", "记录版本", "实际版本", "最新版本", "状态", "最后操作")
+	fmt.Printf("%-35s %-12s %-12s %-12s %-10s %-19s\n", T("包名:仓库slug", "Pkg:Repo"), T("记录版本", "Recorded"), T("实际版本", "System"), T("最新版本", "Latest"), T("状态", "Status"), T("最后操作", "Updated"))
 	fmt.Println(strings.Repeat("-", 110))
 
 	client := gh.NewClient()
@@ -456,9 +456,9 @@ func cmdList(args []string) error {
 	for _, r := range records {
 		r.RefreshSystemInfo(r.PkgName)
 
-		status := "✅ installed"
+		status := "✅ " + T("installed", "installed")
 		if r.Removed {
-			status = "❌ removed"
+			status = "❌ " + T("removed", "removed")
 		}
 
 		sysVer := r.SystemVersion
@@ -483,7 +483,7 @@ func cmdList(args []string) error {
 				}
 			}
 			if latestVer != "-" && latestVer != r.CurrentVersion {
-				status = "🔄 可升级"
+				status = "🔄 " + T("可升级", "upgradable")
 			}
 		}
 
@@ -497,13 +497,7 @@ func cmdList(args []string) error {
 		if r.Owner != "" && r.Repo != "" {
 			repoPart = r.Owner + "/" + r.Repo
 		} else {
-			// 根据 locale 显示"无"或"None"
-			lang := os.Getenv("LANG")
-			if strings.HasPrefix(lang, "zh") {
-				repoPart = "无"
-			} else {
-				repoPart = "None"
-			}
+			repoPart = T("无", "None")
 		}
 		pkgSlug := r.PkgName + ":" + repoPart
 
@@ -704,10 +698,10 @@ func parseRepoSpec(s string) (repo, tag string) {
 
 func fetchRelease(client *gh.Client, owner, repo, tag string) (*gh.Release, error) {
 	if tag != "" {
-		fmt.Printf("📦 获取 release %s...\n", tag)
+		fmt.Printf(T("📦 获取 release %s...\n", "📦 Fetching release %s...\n"), tag)
 		return client.GetReleaseByTag(owner, repo, tag)
 	}
-	fmt.Printf("📦 获取最新 release...\n")
+	fmt.Printf(T("📦 获取最新 release...\n", "📦 Fetching latest release...\n"))
 	return client.GetLatestRelease(owner, repo)
 }
 
@@ -717,7 +711,7 @@ func downloadAsset(client *gh.Client, asset gh.Asset) (string, error) {
 		return "", err
 	}
 	destPath := filepath.Join(cacheDir, asset.Name)
-	fmt.Printf("⬇️  下载中...\n")
+	fmt.Printf(T("⬇️  下载中...\n", "⬇️  Downloading...\n"))
 	err = client.DownloadAsset(asset, destPath, func(downloaded, total int64) {
 		printProgress(downloaded, total)
 	})
@@ -725,17 +719,17 @@ func downloadAsset(client *gh.Client, asset gh.Asset) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("下载失败: %w", err)
 	}
-	fmt.Printf("✅ 下载完成: %s\n", destPath)
+	fmt.Printf(T("✅ 下载完成: %s\n", "✅ Download complete: %s\n"), destPath)
 	return destPath, nil
 }
 
 func installDeb(path string) error {
-	fmt.Printf("📦 安装中 (dpkg -i)...\n")
+	fmt.Printf(T("📦 安装中 (dpkg -i)...\n", "📦 Installing (dpkg -i)...\n"))
 	cmd := exec.Command("sudo", "dpkg", "-i", path)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
-		fmt.Printf("🔧 尝试修复依赖 (apt-get install -f)...\n")
+		fmt.Printf(T("🔧 尝试修复依赖 (apt-get install -f)...\n", "🔧 Trying to fix dependencies (apt-get install -f)...\n"))
 		fixCmd := exec.Command("sudo", "apt-get", "install", "-f", "-y")
 		fixCmd.Stdout = os.Stdout
 		fixCmd.Stderr = os.Stderr
