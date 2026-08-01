@@ -1,0 +1,399 @@
+# ghdeb 包目录 (Known Packages Catalog)
+# 格式：[短名称] + repo / pretty_name / website / summary
+#
+# 用户可在 ~/.config/ghdeb/catalog.toml 添加自定义条目（同名覆盖）
+# 也可在 /etc/ghdeb/catalog.toml 添加系统级条目
+
+# === 开发工具 ===
+
+[bat]
+repo = "sharkdp/bat"
+pretty_name = "bat"
+website = "https://github.com/sharkdp/bat"
+summary = "A cat(1) clone with syntax highlighting and Git integration"
+
+[fd]
+repo = "sharkdp/fd"
+pretty_name = "fd-find"
+website = "https://github.com/sharkdp/fd"
+summary = "A simple, fast and user-friendly alternative to find"
+
+[ripgrep]
+repo = "BurntSushi/ripgrep"
+pretty_name = "ripgrep"
+website = "https://github.com/BurntSushi/ripgrep"
+summary = "An extremely fast grep alternative"
+
+[gh]
+repo = "cli/cli"
+pretty_name = "GitHub CLI"
+website = "https://cli.github.com"
+summary = "GitHub's official command line tool"
+
+[lazygit]
+repo = "jesseduffield/lazygit"
+pretty_name = "lazygit"
+website = "https://github.com/jesseduffield/lazygit"
+summary = "Simple terminal UI for git commands"
+
+[chezmoi]
+repo = "twpayne/chezmoi"
+pretty_name = "chezmoi"
+website = "https://www.chezmoi.io"
+summary = "Manage your dotfiles across multiple diverse machines, securely"
+
+[dive]
+repo = "wagoodman/dive"
+pretty_name = "dive"
+website = "https://github.com/wagoodman/dive"
+summary = "A tool for exploring each layer in a docker image"
+
+[cosign]
+repo = "sigstore/cosign"
+pretty_name = "cosign"
+website = "https://github.com/sigstore/cosign"
+summary = "Container Signing, Verification and Storage in an OCI registry"
+
+[zoxide]
+repo = "ajeetdsouza/zoxide"
+pretty_name = "zoxide"
+website = "https://github.com/ajeetdsouza/zoxide"
+summary = "A smarter cd command, inspired by z and autojump"
+
+[starship]
+repo = "starship/starship"
+pretty_name = "starship"
+website = "https://starship.rs"
+summary = "The minimal, blazing-fast, and infinitely customizable prompt"
+
+[bottom]
+repo = "ClementTsang/bottom"
+pretty_name = "bottom"
+website = "https://github.com/ClementTsang/bottom"
+summary = "A customizable cross-platform graphical process/system monitor"
+
+[btop]
+repo = "aristocratos/btop"
+pretty_name = "btop++"
+website = "https://github.com/aristocratos/btop"
+summary = "A resource monitor with style and features"
+
+[duf]
+repo = "muesli/duf"
+pretty_name = "duf"
+website = "https://github.com/muesli/duf"
+summary = "Disk Usage/Free Utility"
+
+[dust]
+repo = "bootandy/dust"
+pretty_name = "dust"
+website = "https://github.com/bootandy/dust"
+summary = "A more intuitive version of du in rust"
+
+[tokei]
+repo = "XAMPPRocky/tokei"
+pretty_name = "tokei"
+website = "https://github.com/XAMPPRocky/tokei"
+summary = "Count your code, quickly"
+
+[hyperfine]
+repo = "sharkdp/hyperfine"
+pretty_name = "hyperfine"
+website = "https://github.com/sharkdp/hyperfine"
+summary = "A command-line benchmarking tool"
+
+[procs]
+repo = "dalance/procs"
+pretty_name = "procs"
+website = "https://github.com/dalance/procs"
+summary = "A modern replacement for ps written in Rust"
+
+[delta]
+repo = "dandavison/delta"
+pretty_name = "git-delta"
+website = "https://github.com/dandavison/delta"
+summary = "A syntax-highlighting pager for git"
+
+[lsd]
+repo = "lsd-rs/lsd"
+pretty_name = "lsd"
+website = "https://github.com/lsd-rs/lsd"
+summary = "The next gen ls command"
+
+[gitui]
+repo = "extrawurst/gitui"
+pretty_name = "gitui"
+website = "https://github.com/extrawurst/gitui"
+summary = "Blazing fast terminal-ui for git written in rust"
+
+[tealdeer]
+repo = "dbrgn/tealdeer"
+pretty_name = "tealdeer"
+website = "https://github.com/dbrgn/tealdeer"
+summary = "A very fast implementation of tldr in Rust"
+
+# === 远程桌面 / 网络 ===
+
+[rustdesk]
+repo = "rustdesk/rustdesk"
+pretty_name = "RustDesk"
+website = "https://rustdesk.com"
+summary = "Open source virtual / remote desktop infrastructure for everyone"
+
+[localsend]
+repo = "localsend/localsend"
+pretty_name = "LocalSend"
+website = "https://localsend.org"
+summary = "An open source cross-platform alternative to AirDrop"
+
+# === 编辑器 / 终端 ===
+
+[micro]
+repo = "zyedidia/micro"
+pretty_name = "micro"
+website = "https://micro-editor.github.io"
+summary = "A modern and intuitive terminal-based text editor"
+
+[zellij]
+repo = "zellij-org/zellij"
+pretty_name = "zellij"
+website = "https://zellij.dev"
+summary = "A terminal workspace with batteries included"
+
+[alacritty]
+repo = "alacritty/alacritty"
+pretty_name = "Alacritty"
+website = "https://alacritty.org"
+summary = "A cross-platform, OpenGL terminal emulator"
+
+[wezterm]
+repo = "wezterm/wezterm"
+pretty_name = "WezTerm"
+website = "https://wezfurlong.org/wezterm"
+summary = "A GPU-accelerated cross-platform terminal emulator and multiplexer"
+
+# === 容器 / DevOps ===
+
+[nerdctl]
+repo = "containerd/nerdctl"
+pretty_name = "nerdctl"
+website = "https://github.com/containerd/nerdctl"
+summary = "contaiNERD CTL - Docker-compatible CLI for containerd"
+
+[podman]
+repo = "containers/podman"
+pretty_name = "Podman"
+website = "https://podman.io"
+summary = "A tool for managing OCI containers and pods"
+
+# === 绘图 / 设计 ===
+
+[draw.io]
+repo = "jgraph/drawio-desktop"
+pretty_name = "draw.io"
+website = "https://www.diagrams.net"
+summary = "Diagramming and whiteboarding desktop app"
+
+# === 笔记 / 知识管理 ===
+
+[logseq]
+repo = "logseq/logseq"
+pretty_name = "Logseq"
+website = "https://logseq.com"
+summary = "A privacy-first, open-source platform for knowledge management"
+
+[joplin]
+repo = "laurent22/joplin"
+pretty_name = "Joplin"
+website = "https://joplinapp.org"
+summary = "Open source note-taking and to-do application"
+
+# === 密码管理 ===
+
+[keepassxc]
+repo = "keepassxreboot/keepassxc"
+pretty_name = "KeePassXC"
+website = "https://keepassxc.org"
+summary = "Cross Platform Password Manager"
+
+# === 文件管理 ===
+
+[doublecmd]
+repo = "doublecmd/doublecmd"
+pretty_name = "Double Commander"
+website = "https://doublecmd.sourceforge.io"
+summary = "Cross platform open source file manager with two panels"
+
+# === 网络工具 ===
+
+[beszel]
+repo = "henrygd/beszel"
+pretty_name = "Beszel"
+website = "https://github.com/henrygd/beszel"
+summary = "Lightweight server monitoring hub with historical data and Docker stats"
+
+[caddy]
+repo = "caddyserver/caddy"
+pretty_name = "Caddy"
+website = "https://caddyserver.com"
+summary = "Fast and extensible multi-platform HTTP/1-2-3 web server with automatic HTTPS"
+
+# === 安全 ===
+
+[trivy]
+repo = "aquasecurity/trivy"
+pretty_name = "Trivy"
+website = "https://github.com/aquasecurity/trivy"
+summary = "Find vulnerabilities, misconfigurations, secrets in code and containers"
+
+[grype]
+repo = "anchore/grype"
+pretty_name = "Grype"
+website = "https://github.com/anchore/grype"
+summary = "A vulnerability scanner for container images and filesystems"
+
+[syft]
+repo = "anchore/syft"
+pretty_name = "Syft"
+website = "https://github.com/anchore/syft"
+summary = "CLI tool and library for generating a Software Bill of Materials"
+
+# === 数据库 ===
+
+[duckdb]
+repo = "duckdb/duckdb"
+pretty_name = "DuckDB"
+website = "https://duckdb.org"
+summary = "An in-process SQL OLAP database management system"
+
+# === AI / LLM ===
+
+[ollama]
+repo = "ollama/ollama"
+pretty_name = "Ollama"
+website = "https://ollama.com"
+summary = "Get up and running with large language models locally"
+
+# === 通讯 ===
+
+[element-desktop]
+repo = "element-hq/element-desktop"
+pretty_name = "Element Desktop"
+website = "https://element.io"
+summary = "A glossy Matrix collaboration client for desktop"
+
+# === 加密工具 ===
+
+[age]
+repo = "FiloSottile/age"
+pretty_name = "age"
+website = "https://github.com/FiloSottile/age"
+summary = "A simple, modern and secure encryption tool"
+
+[sops]
+repo = "getsops/sops"
+pretty_name = "SOPS"
+website = "https://github.com/getsops/sops"
+summary = "Simple and flexible tool for managing secrets"
+
+# === Kubernetes ===
+
+[k9s]
+repo = "derailed/k9s"
+pretty_name = "K9s"
+website = "https://k9scli.io"
+summary = "Kubernetes CLI To Manage Your Clusters In Style"
+
+# === CI/CD ===
+
+[act]
+repo = "nektos/act"
+pretty_name = "act"
+website = "https://github.com/nektos/act"
+summary = "Run your GitHub Actions locally"
+
+# === 任务运行器 ===
+
+[task]
+repo = "go-task/task"
+pretty_name = "Task"
+website = "https://taskfile.dev"
+summary = "A task runner / simpler Make alternative written in Go"
+
+[goreleaser]
+repo = "goreleaser/goreleaser"
+pretty_name = "GoReleaser"
+website = "https://goreleaser.com"
+summary = "Deliver Go binaries as fast and easily as possible"
+
+# === 版本管理 ===
+
+[mise]
+repo = "jdx/mise"
+pretty_name = "mise"
+website = "https://mise.jdx.dev"
+summary = "dev tools, env vars, tasks (formerly rtx/asdf-compatible)"
+
+# === Python 工具 ===
+
+[uv]
+repo = "astral-sh/uv"
+pretty_name = "uv"
+website = "https://github.com/astral-sh/uv"
+summary = "An extremely fast Python package installer and resolver"
+
+[ruff]
+repo = "astral-sh/ruff"
+pretty_name = "Ruff"
+website = "https://github.com/astral-sh/ruff"
+summary = "An extremely fast Python linter and code formatter"
+
+# === JS/TS 运行时 ===
+
+[deno]
+repo = "denoland/deno"
+pretty_name = "Deno"
+website = "https://deno.land"
+summary = "A modern runtime for JavaScript and TypeScript"
+
+[bun]
+repo = "oven-sh/bun"
+pretty_name = "Bun"
+website = "https://bun.sh"
+summary = "Incredibly fast JavaScript runtime, bundler, test runner, and package manager"
+
+# === 系统编程 ===
+
+[zig]
+repo = "ziglang/zig"
+pretty_name = "Zig"
+website = "https://ziglang.org"
+summary = "General-purpose programming language designed for robustness and clarity"
+
+# === 编辑器 ===
+
+[neovim]
+repo = "neovim/neovim"
+pretty_name = "Neovim"
+website = "https://neovim.io"
+summary = "Vim-fork focused on extensibility and usability"
+
+# === 系统 ===
+
+[ventoy]
+repo = "ventoy/Ventoy"
+pretty_name = "Ventoy"
+website = "https://www.ventoy.net"
+summary = "A new bootable USB solution"
+
+[balena-etcher]
+repo = "balena-io/etcher"
+pretty_name = "balenaEtcher"
+website = "https://etcher.balena.io"
+summary = "Flash OS images to SD cards & USB drives, safely and easily"
+
+[cockpit]
+repo = "cockpit-project/cockpit"
+pretty_name = "Cockpit"
+website = "https://cockpit-project.org"
+summary = "Web-based graphical interface for servers"
