@@ -13,6 +13,7 @@ import (
 
 // Release 表示一个 GitHub Release
 type Release struct {
+	HTMLURL    string  `json:"html_url"`
 	TagName    string  `json:"tag_name"`
 	Name       string  `json:"name"`
 	Prerelease bool    `json:"prerelease"`

@@ -8,13 +8,14 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/leisurelinux/ghdeb/internal/deb"
 	gh "github.com/leisurelinux/ghdeb/internal/github"
 	"github.com/leisurelinux/ghdeb/internal/state"
 )
 
-const version = "0.1.0"
+const version = "0.2.0"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -33,6 +34,8 @@ func main() {
 		err = cmdUpgrade(args)
 	case "list", "ls":
 		err = cmdList()
+	case "history":
+		err = cmdHistory(args)
 	case "remove", "rm":
 		err = cmdRemove(args)
 	case "info":
@@ -59,8 +62,9 @@ func printUsage() {
 用法:
   ghdeb install <owner/repo>[@tag]   安装（或升级到）指定版本
   ghdeb upgrade [owner/repo]         升级包（不指定则升级所有已安装包）
-  ghdeb list                         列出已安装的包
-  ghdeb remove <owner/repo>          移除安装记录
+  ghdeb list                         列出所有包（含已移除）
+  ghdeb history <owner/repo>         查看某包的完整操作历史
+  ghdeb remove <owner/repo>          标记移除（保留历史记录）
   ghdeb info <owner/repo>            查看最新 release 信息
   ghdeb version                      显示版本
 
@@ -72,6 +76,7 @@ func printUsage() {
   ghdeb install casey/just@v1.25.0   安装 just 指定版本
   ghdeb upgrade                      升级所有已安装的包
   ghdeb upgrade sharkdp/bat          只升级 bat
+  ghdeb history sharkdp/bat          查看 bat 的安装/升级/移除历史
 `)
 }
 
@@ -107,14 +112,13 @@ func cmdInstall(args []string) error {
 		return err
 	}
 	repoKey := owner + "/" + repo
-	if existing := st.Get(repoKey); existing != nil && existing.Version == release.TagName {
+	if existing := st.Get(repoKey); existing != nil && existing.CurrentVersion == release.TagName && !existing.Removed {
 		fmt.Printf("✅ %s 已安装版本 %s，无需重复安装\n", repo, release.TagName)
 		return nil
 	}
 
 	asset, err := gh.FindDebAsset(release, arch)
 	if err != nil {
-		// 检查是否是 FallbackError，显示备选方案
 		if fbErr, ok := err.(*gh.FallbackError); ok {
 			fmt.Fprintf(os.Stderr, "\n%s\n", fbErr.Error())
 			return fmt.Errorf("无法自动安装，请手动下载上述文件")
@@ -135,7 +139,11 @@ func cmdInstall(args []string) error {
 	}
 
 	// 记录状态
-	st.Set(repoKey, release.TagName, asset.Name)
+	releaseURL := release.HTMLURL
+	if releaseURL == "" {
+		releaseURL = fmt.Sprintf("https://github.com/%s/%s/releases/tag/%s", owner, repo, release.TagName)
+	}
+	st.SetInstall(repoKey, owner, repo, release.TagName, asset.Name, destPath, releaseURL, arch.DpkgArch)
 	if err := st.Save(); err != nil {
 		return fmt.Errorf("保存状态失败: %w", err)
 	}
@@ -156,8 +164,8 @@ func cmdUpgrade(args []string) error {
 	if len(args) > 0 {
 		repos = args
 	} else {
-		for _, r := range st.List() {
-			repos = append(repos, r.Repo)
+		for _, r := range st.ListActive() {
+			repos = append(repos, r.Owner+"/"+r.Repo)
 		}
 		if len(repos) == 0 {
 			fmt.Println("没有已安装的包需要升级")
@@ -188,14 +196,14 @@ func cmdUpgrade(args []string) error {
 		}
 
 		existing := st.Get(repoKey)
-		if existing != nil && existing.Version == release.TagName {
+		if existing != nil && existing.CurrentVersion == release.TagName && !existing.Removed {
 			fmt.Printf("✅ 已是最新版本 %s\n", release.TagName)
 			continue
 		}
-		if existing != nil {
-			fmt.Printf("📦 发现新版本: %s → %s\n", existing.Version, release.TagName)
+		if existing != nil && !existing.Removed {
+			fmt.Printf("📦 发现新版本: %s → %s\n", existing.CurrentVersion, release.TagName)
 		} else {
-			fmt.Printf("📦 新版本: %s（未安装）\n", release.TagName)
+			fmt.Printf("📦 新版本: %s\n", release.TagName)
 		}
 
 		asset, findErr := gh.FindDebAsset(release, arch)
@@ -219,7 +227,17 @@ func cmdUpgrade(args []string) error {
 			continue
 		}
 
-		st.Set(repoKey, release.TagName, asset.Name)
+		releaseURL := release.HTMLURL
+		if releaseURL == "" {
+			releaseURL = fmt.Sprintf("https://github.com/%s/%s/releases/tag/%s", owner, repo, release.TagName)
+		}
+
+		// 根据是否已有记录，决定是 install 还是 upgrade
+		if existing != nil && !existing.Removed && existing.CurrentVersion != "" {
+			st.SetUpgrade(repoKey, release.TagName, asset.Name, destPath, releaseURL)
+		} else {
+			st.SetInstall(repoKey, owner, repo, release.TagName, asset.Name, destPath, releaseURL, arch.DpkgArch)
+		}
 		upgraded++
 		fmt.Printf("✅ 升级完成: %s %s\n", repoKey, release.TagName)
 	}
@@ -248,10 +266,87 @@ func cmdList() error {
 		fmt.Println("没有已安装的包")
 		return nil
 	}
-	fmt.Printf("%-40s %-15s %s\n", "仓库", "版本", "安装时间")
-	fmt.Println(strings.Repeat("-", 80))
+
+	fmt.Printf("%-30s %-12s %-12s %-10s %-19s\n", "仓库", "安装版本", "系统版本", "状态", "最后操作")
+	fmt.Println(strings.Repeat("-", 90))
 	for _, r := range records {
-		fmt.Printf("%-40s %-15s %s\n", r.Repo, r.Version, r.InstalledAt)
+		// 运行时查询系统版本
+		r.RefreshSystemInfo(r.Repo)
+
+		status := "✅ installed"
+		if r.Removed {
+			status = "❌ removed"
+		}
+
+		sysVer := r.SystemVersion
+		if sysVer == "" {
+			sysVer = "-"
+		}
+
+		updatedAt := formatTime(r.UpdatedAt)
+		fmt.Printf("%-30s %-12s %-12s %-10s %-19s\n",
+			r.Owner+"/"+r.Repo,
+			r.CurrentVersion,
+			sysVer,
+			status,
+			updatedAt,
+		)
+	}
+	return nil
+}
+
+// --- history ---
+
+func cmdHistory(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("请指定仓库，如: ghdeb history sharkdp/bat")
+	}
+	st, err := state.Load()
+	if err != nil {
+		return err
+	}
+	rec := st.Get(args[0])
+	if rec == nil {
+		return fmt.Errorf("未找到 %s 的记录", args[0])
+	}
+
+	fmt.Printf("仓库: %s/%s\n", rec.Owner, rec.Repo)
+	fmt.Printf("当前版本: %s\n", rec.CurrentVersion)
+	fmt.Printf("架构: %s\n", rec.Arch)
+	if rec.Removed {
+		fmt.Printf("状态: ❌ 已移除\n")
+	}
+
+	// 查询系统版本
+	rec.RefreshSystemInfo(rec.Repo)
+	if rec.SystemVersion != "" {
+		fmt.Printf("系统版本: %s\n", rec.SystemVersion)
+	}
+	if rec.InstalledPath != "" {
+		fmt.Printf("安装路径: %s\n", rec.InstalledPath)
+	}
+
+	fmt.Printf("\n操作历史:\n")
+	fmt.Println(strings.Repeat("-", 80))
+	for i, e := range rec.History {
+		ts := formatTime(e.Timestamp)
+		switch e.Action {
+		case state.ActionInstall:
+			fmt.Printf("  %d. [%s] INSTALL  %s\n", i+1, ts, e.Version)
+		case state.ActionUpgrade:
+			fmt.Printf("  %d. [%s] UPGRADE  %s → %s\n", i+1, ts, e.FromVersion, e.Version)
+		case state.ActionRemove:
+			fmt.Printf("  %d. [%s] REMOVE   (was %s)\n", i+1, ts, e.Version)
+		}
+		if e.DebFile != "" {
+			fmt.Printf("     文件: %s\n", e.DebFile)
+		}
+		if e.DebPath != "" {
+			fmt.Printf("     路径: %s\n", e.DebPath)
+		}
+		if e.ReleaseURL != "" {
+			fmt.Printf("     来源: %s\n", e.ReleaseURL)
+		}
 	}
 	return nil
 }
@@ -270,11 +365,11 @@ func cmdRemove(args []string) error {
 	if st.Get(repoKey) == nil {
 		return fmt.Errorf("未找到 %s 的安装记录", repoKey)
 	}
-	st.Remove(repoKey)
+	st.MarkRemoved(repoKey)
 	if err := st.Save(); err != nil {
 		return err
 	}
-	fmt.Printf("✅ 已移除 %s 的安装记录（软件本身未被卸载）\n", repoKey)
+	fmt.Printf("✅ 已标记移除 %s（历史记录已保留，软件本身未被卸载）\n", repoKey)
 	return nil
 }
 
@@ -295,7 +390,6 @@ func cmdInfo(args []string) error {
 	}
 	arch, _ := deb.DetectArch()
 
-	// 使用新的查找函数获取备选方案
 	result, findErr := gh.FindAssetWithFallback(release, arch)
 
 	fmt.Printf("仓库: %s/%s\n", owner, repo)
@@ -303,8 +397,10 @@ func cmdInfo(args []string) error {
 	if release.Name != "" && release.Name != release.TagName {
 		fmt.Printf("名称: %s\n", release.Name)
 	}
+	if release.HTMLURL != "" {
+		fmt.Printf("Release: %s\n", release.HTMLURL)
+	}
 
-	// 显示精确匹配的 .deb
 	if result != nil && result.Asset != nil {
 		fmt.Printf("\n✅ 匹配当前架构 %s 的 .deb 文件:\n", arch.DpkgArch)
 		fmt.Printf("  → %s (%s)\n", result.Asset.Name, formatSize(result.Asset.Size))
@@ -315,7 +411,6 @@ func cmdInfo(args []string) error {
 		}
 	}
 
-	// 显示备选方案
 	if result != nil && len(result.Fallbacks) > 0 {
 		fmt.Printf("\n📦 其他可用的安装包（需手动下载安装）:\n")
 		for _, a := range result.Fallbacks {
@@ -421,6 +516,15 @@ func formatSize(bytes int64) string {
 	default:
 		return fmt.Sprintf("%d B", bytes)
 	}
+}
+
+// formatTime 将 RFC3339 时间格式化为更易读的格式
+func formatTime(s string) string {
+	t, err := time.Parse(time.RFC3339, s)
+	if err != nil {
+		return s
+	}
+	return t.Format("2006-01-02 15:04:05")
 }
 
 // 确保 syscall 被使用
