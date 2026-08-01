@@ -40,6 +40,8 @@ func main() {
 		err = cmdHistory(args)
 	case "remove", "rm":
 		err = cmdRemove(args)
+	case "set-repo":
+		err = cmdSetRepo(args)
 	case "info":
 		err = cmdInfo(args)
 	case "version", "--version", "-v":
@@ -68,6 +70,7 @@ func printUsage() {
   ghdeb list                         列出所有包（含已移除）
   ghdeb history <owner/repo>         查看某包的完整操作历史
   ghdeb remove <owner/repo>          标记移除（保留历史记录）
+  ghdeb set-repo <pkg> <owner/repo>  为包设置 GitHub 仓库
   ghdeb info <owner/repo>            查看最新 release 信息
   ghdeb version                      显示版本
 
@@ -79,6 +82,7 @@ func printUsage() {
   ghdeb scan                         扫描系统中的 GitHub orphan 包并纳入管理
   ghdeb upgrade                      升级所有已管理的包
   ghdeb history sharkdp/bat          查看 bat 的安装/升级/移除历史
+  ghdeb set-repo draw.io jgraph/drawio  设置 draw.io 的仓库
 `)
 }
 
@@ -164,7 +168,7 @@ func cmdUpgrade(args []string) error {
 	// 升级前自动扫描 orphan 包
 	if len(args) == 0 {
 		fmt.Println("🔍 扫描系统中的 GitHub orphan 包...")
-		orphans, scanErr := state.ScanGitHubOrphans()
+		orphans, scanErr := state.ScanOrphans()
 		if scanErr != nil {
 			fmt.Fprintf(os.Stderr, "⚠️  扫描失败: %v\n", scanErr)
 		} else if len(orphans) > 0 {
@@ -288,8 +292,8 @@ func cmdScan(args []string) error {
 		return err
 	}
 
-	fmt.Println("🔍 扫描系统中的 GitHub orphan 包（无 apt 源）...")
-	pkgs, scanErr := state.ScanGitHubOrphans()
+	fmt.Println("🔍 扫描系统中的 orphan 包（无 apt 源）...")
+	pkgs, scanErr := state.ScanOrphans()
 	if scanErr != nil {
 		return fmt.Errorf("扫描失败: %w", scanErr)
 	}
@@ -300,14 +304,20 @@ func cmdScan(args []string) error {
 	}
 
 	// 显示发现的包
-	fmt.Printf("\n发现 %d 个 GitHub 来源的 orphan 包:\n", len(pkgs))
+	fmt.Printf("\n发现 %d 个 orphan 包:\n", len(pkgs))
 	fmt.Printf("%-20s %-30s %-12s %-10s %s\n", "包名", "仓库", "版本", "状态", "Homepage")
 	fmt.Println(strings.Repeat("-", 100))
 
 	newCount := 0
 	for _, p := range pkgs {
-		repoKey := p.Owner + "/" + p.Repo
-		existing := st.Get(repoKey)
+		var repoSlug string
+		if p.HasGitHub {
+			repoSlug = p.Owner + "/" + p.Repo
+		} else {
+			repoSlug = "(待补充)"
+		}
+
+		existing := st.GetByPkgName(p.PkgName)
 
 		status := "🆕 未管理"
 		if existing != nil {
@@ -320,7 +330,7 @@ func cmdScan(args []string) error {
 
 		fmt.Printf("%-20s %-30s %-12s %-10s %s\n",
 			p.PkgName,
-			repoKey,
+			repoSlug,
 			p.Version,
 			status,
 			truncate(p.Homepage, 40),
@@ -477,6 +487,35 @@ func cmdRemove(args []string) error {
 		return err
 	}
 	fmt.Printf("✅ 已标记移除 %s（历史记录已保留，软件本身未被卸载）\n", repoKey)
+	return nil
+}
+
+// --- set-repo ---
+
+func cmdSetRepo(args []string) error {
+	if len(args) < 2 {
+		return fmt.Errorf("用法: ghdeb set-repo <pkg> <owner/repo>")
+	}
+	pkgName := args[0]
+	owner, repo, err := gh.ParseRepo(args[1])
+	if err != nil {
+		return err
+	}
+
+	st, err := state.Load()
+	if err != nil {
+		return err
+	}
+
+	if !st.SetRepo(pkgName, owner, repo) {
+		return fmt.Errorf("未找到包 %s", pkgName)
+	}
+
+	if err := st.Save(); err != nil {
+		return fmt.Errorf("保存状态失败: %w", err)
+	}
+
+	fmt.Printf("✅ 已设置 %s 的仓库为 %s/%s\n", pkgName, owner, repo)
 	return nil
 }
 

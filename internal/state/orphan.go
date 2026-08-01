@@ -17,17 +17,18 @@ type DpkgPackage struct {
 	Architecture string
 }
 
-// GitHubOrphan 来自 GitHub 的 orphan 包
-type GitHubOrphan struct {
+// OrphanPackage orphan 包信息
+type OrphanPackage struct {
 	PkgName  string // deb 包名（如 "bat"）
 	Version  string
-	Owner    string // GitHub owner（从 Homepage 解析）
-	Repo     string // GitHub repo（从 Homepage 解析）
+	Owner    string // GitHub owner（从 Homepage 解析，可能为空）
+	Repo     string // GitHub repo（从 Homepage 解析，可能为空）
 	Homepage string
+	HasGitHub bool  // 是否能从 Homepage 识别出 GitHub 仓库
 }
 
-// ScanGitHubOrphans 扫描系统中的 GitHub 来源 orphan 包
-func ScanGitHubOrphans() ([]GitHubOrphan, error) {
+// ScanOrphans 扫描系统中所有 orphan 包
+func ScanOrphans() ([]OrphanPackage, error) {
 	// 1. 快速获取所有 orphan 包名
 	orphanPkgs, err := getOrphanPackages()
 	if err != nil {
@@ -47,27 +48,33 @@ func ScanGitHubOrphans() ([]GitHubOrphan, error) {
 		pkgMap[allPkgs[i].Name] = &allPkgs[i]
 	}
 
-	// 3. 对 orphan 包检查 Homepage 是否包含 GitHub
-	var orphans []GitHubOrphan
+	// 3. 收集所有 orphan 包信息
+	var orphans []OrphanPackage
 	githubRepoRegex := regexp.MustCompile(`github\.com/([a-zA-Z0-9_-]+)/([a-zA-Z0-9_-]+)`)
 
 	for _, pkgName := range orphanPkgs {
 		pkg, ok := pkgMap[pkgName]
-		if !ok || pkg.Homepage == "" {
-			continue
-		}
-		matches := githubRepoRegex.FindStringSubmatch(pkg.Homepage)
-		if matches == nil {
+		if !ok {
 			continue
 		}
 
-		orphans = append(orphans, GitHubOrphan{
+		orphan := OrphanPackage{
 			PkgName:  pkgName,
 			Version:  pkg.Version,
-			Owner:    matches[1],
-			Repo:     matches[2],
 			Homepage: pkg.Homepage,
-		})
+		}
+
+		// 尝试从 Homepage 解析 GitHub 仓库
+		if pkg.Homepage != "" {
+			matches := githubRepoRegex.FindStringSubmatch(pkg.Homepage)
+			if matches != nil {
+				orphan.Owner = matches[1]
+				orphan.Repo = matches[2]
+				orphan.HasGitHub = true
+			}
+		}
+
+		orphans = append(orphans, orphan)
 	}
 
 	return orphans, nil
@@ -158,13 +165,27 @@ func parseDpkgStatus() ([]DpkgPackage, error) {
 }
 
 // MergeOrphansToState 将发现的 orphan 包合并到 state 中
-func MergeOrphansToState(st *State, orphans []GitHubOrphan) int {
+func MergeOrphansToState(st *State, orphans []OrphanPackage) int {
 	added := 0
 	for _, o := range orphans {
-		repoKey := o.Owner + "/" + o.Repo
+		// 对于有 GitHub 信息的，用 owner/repo 作为 key
+		// 对于没有的，用 pkgName 作为 key
+		var repoKey string
+		if o.HasGitHub {
+			repoKey = o.Owner + "/" + o.Repo
+		} else {
+			repoKey = o.PkgName
+		}
+
+		// 检查是否已存在
 		if st.Get(repoKey) != nil {
 			continue
 		}
+		// 也检查是否已用 pkgName 存在
+		if st.GetByPkgName(o.PkgName) != nil {
+			continue
+		}
+
 		st.Packages[repoKey] = &PackageRecord{
 			PkgName:        o.PkgName,
 			Owner:          o.Owner,
@@ -186,3 +207,45 @@ func MergeOrphansToState(st *State, orphans []GitHubOrphan) int {
 	return added
 }
 
+// SetRepo 为包设置仓库信息
+func (s *State) SetRepo(pkgName, owner, repo string) bool {
+	// 先找到这个包
+	rec := s.GetByPkgName(pkgName)
+	if rec == nil {
+		return false
+	}
+
+	// 找到旧的 key
+	var oldKey string
+	for k, v := range s.Packages {
+		if v == rec {
+			oldKey = k
+			break
+		}
+	}
+
+	// 更新记录
+	rec.Owner = owner
+	rec.Repo = repo
+
+	// 如果 key 需要改变（从 pkgName 改为 owner/repo）
+	newKey := owner + "/" + repo
+	if oldKey != newKey {
+		// 删除旧 key
+		delete(s.Packages, oldKey)
+		// 添加新 key
+		s.Packages[newKey] = rec
+	}
+
+	return true
+}
+
+// GetByPkgName 根据包名查找记录
+func (s *State) GetByPkgName(pkgName string) *PackageRecord {
+	for _, rec := range s.Packages {
+		if rec.PkgName == pkgName {
+			return rec
+		}
+	}
+	return nil
+}
