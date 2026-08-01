@@ -64,7 +64,7 @@ func printUsage() {
 用法:
   ghdeb install <owner/repo>[@tag]   安装（或升级到）指定版本
   ghdeb upgrade [owner/repo]         升级包（自动扫描 orphan，不指定则升级所有）
-  ghdeb scan [--all]                 扫描系统中的 GitHub 来源包（--all 含非 orphan）
+  ghdeb scan                         扫描系统中的 GitHub orphan 包并纳入管理
   ghdeb list                         列出所有包（含已移除）
   ghdeb history <owner/repo>         查看某包的完整操作历史
   ghdeb remove <owner/repo>          标记移除（保留历史记录）
@@ -77,7 +77,6 @@ func printUsage() {
 示例:
   ghdeb install sharkdp/bat          安装 bat 最新版
   ghdeb scan                         扫描系统中的 GitHub orphan 包并纳入管理
-  ghdeb scan --all                   扫描所有 GitHub 来源包（含 apt 源安装的）
   ghdeb upgrade                      升级所有已管理的包
   ghdeb history sharkdp/bat          查看 bat 的安装/升级/移除历史
 `)
@@ -278,39 +277,24 @@ func cmdUpgrade(args []string) error {
 // --- scan ---
 
 func cmdScan(args []string) error {
-	allMode := false
-	for _, a := range args {
-		if a == "--all" {
-			allMode = true
-		}
-	}
-
 	st, err := state.Load()
 	if err != nil {
 		return err
 	}
 
-	var pkgs []state.GitHubOrphan
-	var scanErr error
-
-	if allMode {
-		fmt.Println("🔍 扫描系统中所有 GitHub 来源的包...")
-		pkgs, scanErr = state.DiscoverGitHubPackages()
-	} else {
-		fmt.Println("🔍 扫描系统中的 GitHub orphan 包（无 apt 源）...")
-		pkgs, scanErr = state.ScanGitHubOrphans()
-	}
+	fmt.Println("🔍 扫描系统中的 GitHub orphan 包（无 apt 源）...")
+	pkgs, scanErr := state.ScanGitHubOrphans()
 	if scanErr != nil {
 		return fmt.Errorf("扫描失败: %w", scanErr)
 	}
 
 	if len(pkgs) == 0 {
-		fmt.Println("未发现 GitHub 来源的包")
+		fmt.Println("未发现 GitHub 来源的 orphan 包")
 		return nil
 	}
 
 	// 显示发现的包
-	fmt.Printf("\n发现 %d 个 GitHub 来源的包:\n", len(pkgs))
+	fmt.Printf("\n发现 %d 个 GitHub 来源的 orphan 包:\n", len(pkgs))
 	fmt.Printf("%-20s %-30s %-12s %-10s %s\n", "包名", "仓库", "版本", "状态", "Homepage")
 	fmt.Println(strings.Repeat("-", 100))
 

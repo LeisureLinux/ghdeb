@@ -185,36 +185,3 @@ func MergeOrphansToState(st *State, orphans []GitHubOrphan) int {
 	return added
 }
 
-// DiscoverGitHubPackages 发现系统中的 GitHub 来源包（不一定是 orphan）
-func DiscoverGitHubPackages() ([]GitHubOrphan, error) {
-	pkgs, err := parseDpkgStatus()
-	if err != nil {
-		return nil, err
-	}
-
-	var results []GitHubOrphan
-	githubRepoRegex := regexp.MustCompile(`github\.com/([a-zA-Z0-9_-]+)/([a-zA-Z0-9_-]+)`)
-
-	for _, pkg := range pkgs {
-		if !strings.Contains(pkg.Status, "install ok installed") {
-			continue
-		}
-		if pkg.Homepage == "" {
-			continue
-		}
-		matches := githubRepoRegex.FindStringSubmatch(pkg.Homepage)
-		if matches == nil {
-			continue
-		}
-
-		results = append(results, GitHubOrphan{
-			PkgName:  pkg.Name,
-			Version:  pkg.Version,
-			Owner:    matches[1],
-			Repo:     matches[2],
-			Homepage: pkg.Homepage,
-		})
-	}
-
-	return results, nil
-}
