@@ -70,3 +70,13 @@ func (a *ArchInfo) MatchAsset(filename string) bool {
 	}
 	return false
 }
+
+// ExtractPkgName 从 deb 文件提取包名
+func ExtractPkgName(debPath string) string {
+	cmd := exec.Command("dpkg-deb", "-f", debPath, "Package")
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}

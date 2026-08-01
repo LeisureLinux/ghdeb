@@ -166,6 +166,7 @@ func MergeOrphansToState(st *State, orphans []GitHubOrphan) int {
 			continue
 		}
 		st.Packages[repoKey] = &PackageRecord{
+			PkgName:        o.PkgName,
 			Owner:          o.Owner,
 			Repo:           o.Repo,
 			CurrentVersion: o.Version,

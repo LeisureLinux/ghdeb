@@ -35,6 +35,7 @@ type HistoryEntry struct {
 // PackageRecord 一个仓库的完整状态
 type PackageRecord struct {
 	Owner          string         `json:"owner"`
+	PkgName        string         `json:"pkg_name,omitempty"`          // deb 包名（如 "bat"）
 	Repo           string         `json:"repo"`
 	CurrentVersion string         `json:"current_version"`                    // 最后一次 install/upgrade 的版本
 	SystemVersion  string         `json:"system_version,omitempty"`           // dpkg 实际版本（运行时查询）
@@ -94,11 +95,11 @@ func (s *State) Get(repo string) *PackageRecord {
 }
 
 // SetInstall 记录一次安装操作
-func (s *State) SetInstall(repo, owner, repoName, version, debFile, debPath, releaseURL, arch string) {
+func (s *State) SetInstall(repo, owner, repoName, version, debFile, debPath, releaseURL, arch, pkgName string) {
 	now := time.Now().Format(time.RFC3339)
 	rec := s.Packages[repo]
 	if rec == nil {
-		rec = &PackageRecord{Owner: owner, Repo: repoName, Arch: arch}
+		rec = &PackageRecord{Owner: owner, Repo: repoName, Arch: arch, PkgName: pkgName}
 		s.Packages[repo] = rec
 	}
 	rec.CurrentVersion = version

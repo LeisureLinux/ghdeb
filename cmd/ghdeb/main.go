@@ -133,6 +133,9 @@ func cmdInstall(args []string) error {
 		return err
 	}
 
+	// 提取 deb 包名
+	pkgName := deb.ExtractPkgName(destPath)
+
 	if err := installDeb(destPath); err != nil {
 		return err
 	}
@@ -141,7 +144,7 @@ func cmdInstall(args []string) error {
 	if releaseURL == "" {
 		releaseURL = fmt.Sprintf("https://github.com/%s/%s/releases/tag/%s", owner, repo, release.TagName)
 	}
-	st.SetInstall(repoKey, owner, repo, release.TagName, asset.Name, destPath, releaseURL, arch.DpkgArch)
+	st.SetInstall(repoKey, owner, repo, release.TagName, asset.Name, destPath, releaseURL, arch.DpkgArch, pkgName)
 	if err := st.Save(); err != nil {
 		return fmt.Errorf("保存状态失败: %w", err)
 	}
@@ -243,6 +246,9 @@ func cmdUpgrade(args []string) error {
 			continue
 		}
 
+		// 提取 deb 包名
+		pkgName := deb.ExtractPkgName(destPath)
+
 		if instErr := installDeb(destPath); instErr != nil {
 			fmt.Fprintf(os.Stderr, "⚠️  安装失败: %v\n", instErr)
 			continue
@@ -256,7 +262,7 @@ func cmdUpgrade(args []string) error {
 		if existing != nil && !existing.Removed && existing.CurrentVersion != "" {
 			st.SetUpgrade(repoKey, release.TagName, asset.Name, destPath, releaseURL)
 		} else {
-			st.SetInstall(repoKey, owner, repo, release.TagName, asset.Name, destPath, releaseURL, arch.DpkgArch)
+			st.SetInstall(repoKey, owner, repo, release.TagName, asset.Name, destPath, releaseURL, arch.DpkgArch, pkgName)
 		}
 		upgraded++
 		fmt.Printf("✅ 升级完成: %s %s\n", repoKey, release.TagName)
@@ -357,8 +363,8 @@ func cmdList() error {
 		return nil
 	}
 
-	fmt.Printf("%-30s %-12s %-12s %-10s %-19s\n", "仓库", "安装版本", "系统版本", "状态", "最后操作")
-	fmt.Println(strings.Repeat("-", 90))
+	fmt.Printf("%-35s %-12s %-12s %-10s %-19s\n", "包名:仓库slug", "安装版本", "系统版本", "状态", "最后操作")
+	fmt.Println(strings.Repeat("-", 95))
 	for _, r := range records {
 		r.RefreshSystemInfo(r.Repo)
 
@@ -377,8 +383,14 @@ func cmdList() error {
 			updatedAt = formatTime(updatedAt)
 		}
 
-		fmt.Printf("%-30s %-12s %-12s %-10s %-19s\n",
-			r.Owner+"/"+r.Repo,
+		// 拼接包名:仓库
+		pkgSlug := r.Owner + "/" + r.Repo
+		if r.PkgName != "" {
+			pkgSlug = r.PkgName + ":" + r.Owner + "/" + r.Repo
+		}
+
+		fmt.Printf("%-35s %-12s %-12s %-10s %-19s\n",
+			pkgSlug,
 			r.CurrentVersion,
 			sysVer,
 			status,
