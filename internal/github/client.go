@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/leisurelinux/ghdeb/internal/config"
 	"github.com/leisurelinux/ghdeb/internal/i18n"
 )
 
@@ -46,24 +47,14 @@ type Client struct {
 	token          string
 }
 
-// getProxyFunc 从环境变量获取代理配置
+// getProxyFunc 返回代理函数，优先使用环境变量，其次使用配置文件
 func getProxyFunc() func(*http.Request) (*url.URL, error) {
 	return func(req *http.Request) (*url.URL, error) {
-		// 优先使用 HTTPS_PROXY / https_proxy
-		proxyURL := os.Getenv("HTTPS_PROXY")
-		if proxyURL == "" {
-			proxyURL = os.Getenv("https_proxy")
+		proxyStr := config.GetProxy()
+		if proxyStr == "" {
+			return nil, nil
 		}
-		if proxyURL == "" {
-			proxyURL = os.Getenv("HTTP_PROXY")
-		}
-		if proxyURL == "" {
-			proxyURL = os.Getenv("http_proxy")
-		}
-		if proxyURL == "" {
-			return nil, nil // 无代理
-		}
-		return url.Parse(proxyURL)
+		return url.Parse(proxyStr)
 	}
 }
 
@@ -85,7 +76,7 @@ func NewClient() *Client {
 		// 这样大文件下载不会被固定超时卡死
 		downloadClient: &http.Client{
 			Transport: &http.Transport{
-				Proxy:                 getProxyFunc(),
+				Proxy:                 http.ProxyFromEnvironment,
 				ResponseHeaderTimeout: 30 * time.Second,
 				TLSHandshakeTimeout:   10 * time.Second,
 			},

@@ -1,4 +1,4 @@
-.TH GHDEB 1 "2026-08-01" "ghdeb 0.3.4" "User Commands"
+.TH GHDEB 1 "2026-08-01" "ghdeb 0.3.5" "User Commands"
 .SH NAME
 ghdeb \- Install .deb packages from GitHub Releases
 .SH SYNOPSIS
@@ -145,6 +145,24 @@ List all packages, forcing a fresh check of latest versions.
 .TP
 .B ghdeb set\-repo draw.io jgraph/drawio
 Assign a GitHub repo to a previously scanned package.
+Configuration file (JSON format):
+.TP
+.B ~/.config/ghdeb/config.json
+User configuration file. Currently supports:
+.RS
+.TP
+.B proxy
+Proxy URL (e.g., "http://wpad.lan:8888"). Used when environment variables
+are not set.
+.RE
+.PP
+Example config.json:
+.EX
+{
+  "proxy": "http://wpad.lan:8888"
+}
+.EE
+
 .SH SHELL COMPLETION
 .B ghdeb
 provides shell completion scripts for bash and zsh. After installation,

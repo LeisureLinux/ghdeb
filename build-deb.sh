@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-VERSION="0.3.4"
+VERSION="0.3.5"
 ARCH="amd64"
 PKG_NAME="ghdeb_${VERSION}_${ARCH}"
 PKG_DIR="dist/${PKG_NAME}"
