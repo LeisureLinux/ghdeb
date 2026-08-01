@@ -34,3 +34,12 @@ build-all:
 	GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o dist/$(BINARY)-linux-amd64 ./cmd/ghdeb/
 	GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o dist/$(BINARY)-linux-arm64 ./cmd/ghdeb/
 	GOOS=linux GOARCH=arm GOARM=7 go build -ldflags="-s -w" -o dist/$(BINARY)-linux-armhf ./cmd/ghdeb/
+
+# 交叉编译所有架构的 .deb 包
+build-all-deb:
+	@bash build-all-deb.sh
+
+# 单架构 .deb 包（用法: make build-deb ARCH=arm64）
+ARCH ?= $(shell go env GOARCH)
+build-deb:
+	@bash build-deb.sh $(ARCH)
