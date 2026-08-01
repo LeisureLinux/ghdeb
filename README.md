@@ -1,126 +1,174 @@
-# ghdeb
+# ghdeb — Install & Upgrade .deb Packages from GitHub Releases
 
-从 GitHub Releases 一键安装/升级 `.deb` 包。
+[![Release](https://img.shields.io/github/v/release/LeisureLinux/ghdeb)](https://github.com/LeisureLinux/ghdeb/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-```
-ghdeb install LeisureLinux/ghdeb      # 安装 ghdeb 最新版
-ghdeb upgrade                  # 升级所有已安装的包
-ghdeb list                     # 查看已安装列表
-```
-
-## 为什么需要这个工具？
-
-很多优秀的 CLI 工具（ghdeb、fd、ripgrep 等）在 GitHub Releases 提供 `.deb` 包，但安装流程繁琐：
-
-1. 打开 GitHub releases 页面
-2. 找到最新的 `.deb` 文件
-3. 判断哪个文件匹配自己的架构（amd64? arm64?）
-4. 复制下载链接，`wget` 下载
-5. `sudo dpkg -i` 安装
-6. 升级时重复以上步骤
-
-**ghdeb 把这些步骤简化为一行命令。**
-
-## 安装
+**ghdeb** is a lightweight CLI tool that installs and upgrades `.deb` packages directly from GitHub Releases — one command, no PPA, no manual download.
 
 ```bash
-# 从源码编译
-make build
-sudo make install
-
-# 或直接 go install
-go install github.com/leisurelinux/ghdeb/cmd/ghdeb@latest
+ghdeb install LeisureLinux/ghdeb      # install latest ghdeb
+ghdeb upgrade                         # upgrade all managed packages
+ghdeb list                            # list installed packages
 ```
 
-## 使用方法
+## What problem does ghdeb solve?
 
-### 安装
+Many excellent CLI tools — **bat**, **fd**, **ripgrep**, **gh**, **rustdesk**, **localsend** — distribute `.deb` packages via GitHub Releases, but the install workflow is painful:
+
+1. Open the GitHub releases page
+2. Find the correct `.deb` file for your architecture
+3. Copy the download URL, `wget` it
+4. `sudo dpkg -i` to install
+5. Repeat all of the above for every upgrade
+
+**ghdeb reduces this to a single command.**
+
+## How to install ghdeb?
 
 ```bash
-# 安装最新版
+# Download and install the latest release
 ghdeb install LeisureLinux/ghdeb
 
-# 安装指定版本
-ghdeb install LeisureLinux/ghdeb@v0.3.14
+# Or install a specific version
+ghdeb install LeisureLinux/ghdeb@v0.3.15
 
-# 安装 GitHub CLI
-ghdeb install cli/cli
+# Or build from source
+git clone https://github.com/LeisureLinux/ghdeb.git
+cd ghdeb && make build && sudo make install
 ```
 
-### 升级
+## How to install any .deb package from GitHub?
 
 ```bash
-# 升级所有已安装的包
+# Install the latest release of any GitHub project that provides .deb assets
+ghdeb install cli/cli               # GitHub CLI
+ghdeb install rustdesk/rustdesk     # RustDesk remote desktop
+ghdeb install localsend/localsend   # LocalSend file sharing
+ghdeb install jgraph/drawio         # draw.io diagrams
+
+# Install a specific version
+ghdeb install LeisureLinux/ghdeb@v0.3.14
+```
+
+ghdeb automatically detects your system architecture (`dpkg --print-architecture`) and selects the matching `.deb` asset from the release.
+
+## How to upgrade all GitHub-sourced packages?
+
+```bash
+# Upgrade everything ghdeb manages
 ghdeb upgrade
 
-# 只升级某个包
+# Upgrade a specific package
 ghdeb upgrade LeisureLinux/ghdeb
+
+# Upgrade by package name
+ghdeb upgrade rustdesk
 ```
 
-### 查看信息
+## How to find unmanaged GitHub .deb packages on my system?
 
 ```bash
-# 查看远程最新 release 信息（不安装）
-ghdeb info BurntSushi/ripgrep
+# Scan for orphan packages (installed .deb with no apt source)
+ghdeb scan
 
-# 列出已安装的包
+# Deep scan: also fetch Homepage URLs to find GitHub links
+ghdeb scan --deep
+```
+
+ghdeb discovers `.deb` packages installed on your system that have no corresponding apt repository — these are "orphan packages" that won't receive updates through `apt upgrade`.
+
+## How to view package information?
+
+```bash
+# Show latest release info (without installing)
+ghdeb info LeisureLinux/ghdeb
+
+# List all managed packages with versions
 ghdeb list
+
+# View operation history for a package
+ghdeb history LeisureLinux/ghdeb
 ```
 
-### 移除记录
+## How does architecture matching work?
+
+ghdeb intelligently matches release assets to your system architecture:
+
+| System Arch | Matches Filename Keywords |
+|-------------|---------------------------|
+| amd64       | amd64, x86_64, x86-64, x64 |
+| arm64       | arm64, aarch64            |
+| armhf       | armhf, armv7l, armv7      |
+| i386        | i386, x86, i686, 386      |
+
+It prefers standard packages and skips musl/static/portable variants.
+
+## How to configure a proxy for GitHub downloads?
 
 ```bash
-# 移除安装记录（不卸载软件本身）
-ghdeb remove LeisureLinux/ghdeb
+# Via environment variable
+export https_proxy=http://your-proxy:8080
+ghdeb install LeisureLinux/ghdeb
+
+# Or via config file (~/.config/ghdeb/config.json)
+echo '{"proxy": "http://your-proxy:8080"}' > ~/.config/ghdeb/config.json
 ```
 
-## 工作原理
+ghdeb also supports download retry (3 attempts with exponential backoff) and resume downloads.
 
-1. **架构检测**：通过 `dpkg --print-architecture` 检测系统架构
-2. **版本查询**：调用 GitHub API 获取最新 release
-3. **智能匹配**：从 release assets 中找到匹配当前架构的 `.deb` 文件
-   - 优先选择标准包，跳过 musl/static/portable 变体
-   - 支持多种架构命名（amd64/x86_64/x64、arm64/aarch64 等）
-4. **下载安装**：下载 `.deb` 并用 `dpkg -i` 安装，自动处理依赖
-5. **状态追踪**：记录已安装版本，避免重复安装，支持增量升级
+## How to set up shell autocompletion?
 
-## 架构匹配
+```bash
+# zsh — system-wide
+sudo cp /usr/share/ghdeb/completion/ghdeb.zsh /usr/share/zsh/site-functions/_ghdeb
 
-| 系统架构 | 匹配的文件名关键词 |
-|---------|------------------|
-| amd64   | amd64, x86_64, x86-64, x64 |
-| arm64   | arm64, aarch64 |
-| armhf   | armhf, armv7l, armv7 |
-| i386    | i386, x86, i686, 386 |
+# bash — system-wide
+sudo cp /usr/share/ghdeb/completion/ghdeb.bash /etc/bash_completion.d/ghdeb
+```
 
-## 环境变量
+## How does ghdeb compare to other tools?
 
-| 变量 | 说明 |
-|-----|------|
-| `GITHUB_TOKEN` / `GH_TOKEN` | GitHub 个人访问令牌，提高 API 速率限制（未认证 60 次/小时 → 认证 5000 次/小时） |
+| Tool | Approach | Limitation |
+|------|----------|------------|
+| **ghdeb** | Client-side CLI, zero config | — |
+| gitdeb | Shell script | No stars, no community validation |
+| debian-package-installer | Python + JSON config | Requires configuration files |
+| github-apt-repos (★110) | Server-side APT repo builder | Overkill for personal use |
+| inapt (★8) | Server-side APT proxy | Requires infrastructure |
+| apt-transport-github (★13) | APT transport | Marked "NOT YET READY", unmaintained |
 
-## 数据存储
+**ghdeb fills the gap for a lightweight, zero-config client-side CLI tool.**
 
-| 路径 | 说明 |
-|-----|------|
-| `~/.cache/ghdeb/` | 下载的 .deb 文件缓存 |
-| `~/.local/state/ghdeb/installed.json` | 已安装包的状态记录 |
+## Environment Variables
 
-遵循 XDG 规范，可通过 `XDG_CACHE_HOME` 和 `XDG_STATE_HOME` 自定义。
+| Variable | Description |
+|----------|-------------|
+| `GITHUB_TOKEN` / `GH_TOKEN` | GitHub PAT — raises API rate limit (60→5000 req/hr) |
+| `https_proxy` / `http_proxy` | Proxy for GitHub downloads |
+| `XDG_CACHE_HOME` | Override download cache directory |
+| `XDG_STATE_HOME` | Override state file directory |
 
-## 已有类似工具？
+## Data Storage (XDG-compliant)
 
-调研发现现有工具要么不活跃、要么过于复杂、要么是服务端方案：
+| Path | Purpose |
+|------|---------|
+| `~/.cache/ghdeb/` | Downloaded .deb file cache |
+| `~/.local/state/ghdeb/installed.json` | Package state tracking |
+| `~/.config/ghdeb/config.json` | Configuration (proxy, etc.) |
 
-| 工具 | 问题 |
-|-----|------|
-| gitdeb | Shell 脚本，0 stars，无社区验证 |
-| debian-package-installer | Python，需要 JSON 配置文件 |
-| github-apt-repos (★110) | 服务端工具，构建 APT 仓库 |
-| inapt (★8) | 服务端 APT 仓库代理 |
-| apt-transport-github (★13) | 标注 "NOT YET READY"，多年未更新 |
+## FAQ
 
-**ghdeb 填补了轻量级客户端 CLI 工具的空白。**
+### Does ghdeb replace apt?
+No. ghdeb manages packages that are **not** in any apt repository — typically `.deb` files distributed via GitHub Releases. Regular system packages should still be managed with `apt`.
+
+### What happens if I remove a package with `apt remove`?
+ghdeb detects the actual installation state via `dpkg-query`. Running `ghdeb upgrade` will automatically reinstall packages that were removed but are still tracked.
+
+### Does ghdeb support non-.deb assets?
+ghdeb focuses on `.deb` packages. For other asset types (AppImage, tarball), use the GitHub release page directly.
+
+### Is ghdeb safe to use?
+ghdeb downloads `.deb` files from official GitHub Releases and installs them with `dpkg -i`. It sets `DEBIAN_FRONTEND=noninteractive` to avoid interactive prompts. Always review packages from third-party repositories.
 
 ## License
 

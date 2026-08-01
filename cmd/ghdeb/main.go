@@ -16,7 +16,7 @@ import (
 	"github.com/leisurelinux/ghdeb/internal/state"
 )
 
-const version = "0.3.15"
+const version = "0.3.16"
 
 func main() {
 	// 显示版本信息

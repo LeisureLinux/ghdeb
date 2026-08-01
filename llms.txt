@@ -1,0 +1,69 @@
+# ghdeb
+
+> ghdeb is a lightweight CLI tool that installs and upgrades .deb packages directly from GitHub Releases on Debian/Ubuntu systems. It eliminates manual download-find-install cycles for packages distributed outside apt repositories.
+
+## Core Commands
+
+- `ghdeb install <owner/repo>[@tag]`: Install or upgrade a package from GitHub Releases. Auto-detects architecture and selects the matching .deb asset.
+- `ghdeb upgrade [owner/repo]`: Upgrade all managed packages, or a specific one. Auto-scans for orphan packages before upgrading.
+- `ghdeb scan [--deep]`: Discover orphan .deb packages on the system (installed .deb with no apt source). --deep fetches Homepage URLs to find GitHub links.
+- `ghdeb list [--refresh]`: List all managed packages with recorded, system, and latest versions.
+- `ghdeb info <owner/repo or pkgname>`: Show latest release information without installing.
+- `ghdeb history <owner/repo>`: Show full operation history for a package.
+- `ghdeb remove <owner/repo>`: Mark a package as removed (keeps history).
+- `ghdeb set-repo <pkg> <owner/repo>`: Associate a system package with a GitHub repository.
+
+## Key Features
+
+- **Zero configuration**: Works out of the box. No config files, no JSON, no YAML required.
+- **Architecture auto-detection**: Uses `dpkg --print-architecture` and matches release assets by filename patterns (amd64/x86_64/x64, arm64/aarch64, etc.).
+- **Smart asset selection**: Prefers standard .deb packages, skips musl/static/portable variants.
+- **Orphan package management**: Detects .deb packages installed without apt sources — a common gap in Debian/Ubuntu systems.
+- **Download resilience**: 3 retries with exponential backoff, resume downloads, HTTP 416 handling.
+- **Proxy support**: Respects `https_proxy`/`http_proxy` environment variables and `~/.config/ghdeb/config.json`.
+- **Non-interactive install**: Sets `DEBIAN_FRONTEND=noninteractive` to avoid debconf prompts.
+- **Shell autocompletion**: Built-in zsh and bash completion scripts.
+- **Bilingual output**: Chinese and English, selected by system locale.
+- **XDG-compliant**: Cache in `~/.cache/ghdeb/`, state in `~/.local/state/ghdeb/`, config in `~/.config/ghdeb/`.
+
+## Typical Workflows
+
+### Install a tool from GitHub
+```
+ghdeb install rustdesk/rustdesk
+```
+
+### Upgrade everything
+```
+ghdeb upgrade
+```
+
+### Find unmanaged packages
+```
+ghdeb scan --deep
+```
+
+### Check what's installed
+```
+ghdeb list
+```
+
+## Architecture
+
+- Written in Go, single binary, no runtime dependencies.
+- Uses GitHub REST API (unauthenticated: 60 req/hr, with GITHUB_TOKEN: 5000 req/hr).
+- Release metadata cached for 24 hours in `~/.cache/ghdeb/releases.json`.
+- Package state tracked in `~/.local/state/ghdeb/installed.json`.
+
+## How it differs from alternatives
+
+- vs `apt`: ghdeb manages packages NOT in any apt repository (GitHub Releases only).
+- vs manual `wget` + `dpkg -i`: ghdeb automates the entire find-download-install cycle.
+- vs github-apt-repos / inapt: ghdeb is a client-side tool, no server infrastructure needed.
+- vs gitdeb: ghdeb is a compiled Go binary with architecture detection, retry logic, and state management.
+
+## Repository
+
+- Source: https://github.com/LeisureLinux/ghdeb
+- License: MIT
+- Language: Go
