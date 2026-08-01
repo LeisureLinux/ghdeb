@@ -16,7 +16,7 @@ import (
 	"github.com/leisurelinux/ghdeb/internal/state"
 )
 
-const version = "0.3.13"
+const version = "0.3.14"
 
 func main() {
 	// 显示版本信息
@@ -715,11 +715,27 @@ func cmdTestHomepage(args []string) error {
 
 func cmdInfo(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf(T("请指定仓库，如: ghdeb info sharkdp/bat", "Please specify a repo, e.g.: ghdeb info sharkdp/bat"))
+		return fmt.Errorf(T("请指定包名或仓库，如: ghdeb info rustdesk 或 ghdeb info rustdesk/rustdesk", "Please specify a package name or repo, e.g.: ghdeb info rustdesk or ghdeb info rustdesk/rustdesk"))
 	}
-	owner, repo, err := gh.ParseRepo(args[0])
+	
+	var owner, repo string
+	var err error
+	
+	// 先尝试解析为 owner/repo
+	owner, repo, err = gh.ParseRepo(args[0])
 	if err != nil {
-		return err
+		// 解析失败，尝试作为包名查找 state
+		st, loadErr := state.Load()
+		if loadErr != nil {
+			return fmt.Errorf(T("无法解析 %s 且加载状态失败: %w", "Cannot parse %s and failed to load state: %w"), args[0], loadErr)
+		}
+		rec := st.GetByPkgName(args[0])
+		if rec != nil && rec.Owner != "" && rec.Repo != "" {
+			owner = rec.Owner
+			repo = rec.Repo
+		} else {
+			return fmt.Errorf(T("未找到包 %s，请使用 owner/repo 格式或确保该包已被管理", "Package %s not found, please use owner/repo format or ensure the package is managed"), args[0])
+		}
 	}
 	client := gh.NewClient()
 	release, err := client.GetLatestRelease(owner, repo)
