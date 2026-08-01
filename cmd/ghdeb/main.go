@@ -64,7 +64,8 @@ func main() {
 }
 
 func printUsage() {
-	fmt.Print(`ghdeb - 从 GitHub Releases 安装 .deb 包
+	if isChinese() {
+		fmt.Print(`ghdeb - 从 GitHub Releases 安装 .deb 包
 
 用法:
   ghdeb install <owner/repo>[@tag]   安装（或升级到）指定版本
@@ -89,6 +90,33 @@ func printUsage() {
   ghdeb history sharkdp/bat          查看 bat 的安装/升级/移除历史
   ghdeb set-repo draw.io jgraph/drawio  设置 draw.io 的仓库
 `)
+	} else {
+		fmt.Print(`ghdeb - Install .deb packages from GitHub Releases
+
+Usage:
+  ghdeb install <owner/repo>[@tag]   Install (or upgrade to) specified version
+  ghdeb upgrade [owner/repo]         Upgrade packages (auto-scan orphans, upgrade all if unspecified)
+  ghdeb scan [--deep]                Scan system for GitHub orphan packages and add to management
+                                     --deep: Fetch Homepage to find GitHub links
+  ghdeb list [--refresh]             List all packages (including removed), --refresh to force refresh cache
+  ghdeb history <owner/repo>         View complete operation history for a package
+  ghdeb remove <owner/repo>          Mark as removed (preserve history)
+  ghdeb set-repo <pkg> <owner/repo>  Set GitHub repository for a package
+  ghdeb info <owner/repo>            View latest release info
+  ghdeb version                      Show version
+
+Environment Variables:
+  GITHUB_TOKEN / GH_TOKEN            GitHub personal access token (increases API rate limit)
+
+Examples:
+  ghdeb install sharkdp/bat          Install latest bat
+  ghdeb scan [--deep]                Scan system for GitHub orphan packages
+                                     --deep: Fetch Homepage to find GitHub links
+  ghdeb upgrade                      Upgrade all managed packages
+  ghdeb history sharkdp/bat          View bat's install/upgrade/remove history
+  ghdeb set-repo draw.io jgraph/drawio  Set draw.io's repository
+`)
+	}
 }
 
 // --- install ---

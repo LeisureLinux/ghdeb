@@ -2,12 +2,17 @@
 
 BINARY = ghdeb
 DESTDIR ?= /usr/local/bin
+MANDIR ?= /usr/local/share/man
 
 build:
 	go build -ldflags="-s -w" -o $(BINARY) ./cmd/ghdeb/
 
 install: build
+	install -d $(DESTDIR)
 	install -m 755 $(BINARY) $(DESTDIR)/$(BINARY)
+	install -d $(MANDIR)/man1
+	install -m 644 man/$(BINARY).1 $(MANDIR)/man1/$(BINARY).1
+	@echo "提示: 运行 'mandb' 更新 man 数据库 (可选)"
 
 clean:
 	rm -f $(BINARY)

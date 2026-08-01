@@ -1,0 +1,224 @@
+.TH GHDEB 1 "2026-08-01" "ghdeb 0.3.0" "User Commands"
+.SH NAME
+ghdeb \- Install .deb packages from GitHub Releases
+.br
+从 GitHub Releases 安装 .deb 包
+.SH SYNOPSIS
+.B ghdeb
+.I command
+.RI [ arguments ]
+.SH DESCRIPTION
+.B ghdeb
+is a lightweight CLI tool that simplifies installing and upgrading .deb packages
+directly from GitHub Releases. It handles architecture detection, asset matching,
+downloading, and installation in a single command.
+.PP
+.B ghdeb
+是一个轻量级命令行工具，简化从 GitHub Releases 直接安装和升级 .deb 包的流程。
+它在一个命令中处理架构检测、资源匹配、下载和安装。
+.SH COMMANDS
+.SS install
+.B ghdeb install
+.IB owner / repo [ @tag ]
+.PP
+Install or upgrade a package to the specified version. If no tag is given,
+the latest stable release is used.
+.br
+安装或升级包到指定版本。如未指定 tag，则使用最新稳定版。
+.SS upgrade
+.B ghdeb upgrade
+.RI [ owner/repo ]
+.PP
+Upgrade managed packages. If no package is specified, all managed packages
+are upgraded. Automatically scans for orphan packages before upgrading.
+.br
+升级已管理的包。如未指定包名，则升级所有已管理的包。升级前自动扫描 orphan 包。
+.SS scan
+.B ghdeb scan
+.RB [ \-\-deep ]
+.PP
+Scan the system for GitHub-sourced orphan packages (packages installed without
+an apt source) and optionally add them to management.
+.br
+扫描系统中的 GitHub 来源 orphan 包（无 apt 源的已安装包），并可选择纳入管理。
+.TP
+.B \-\-deep
+Also fetch each package's Homepage URL and try to extract a GitHub repository
+link from it.
+.br
+同时抓取每个包的 Homepage URL，尝试从中提取 GitHub 仓库链接。
+.SS list
+.B ghdeb list
+.RB [ \-\-refresh ]
+.PP
+List all managed packages, showing recorded version, system version, latest
+available version, and upgrade status.
+.br
+列出所有已管理的包，显示记录版本、系统版本、最新可用版本和升级状态。
+.TP
+.B \-\-refresh
+Force refresh the version cache by clearing all cached release data and
+re-fetching from GitHub API.
+.br
+强制刷新版本缓存，清除所有缓存的 release 数据并从 GitHub API 重新获取。
+.SS history
+.B ghdeb history
+.IB owner / repo
+.PP
+Show the complete operation history (install, upgrade, remove) for a package.
+.br
+显示某个包的完整操作历史（安装、升级、移除）。
+.SS remove
+.B ghdeb remove
+.IB owner / repo
+.PP
+Mark a package as removed. The package itself is not uninstalled; only the
+ghdeb management record is marked as removed. History is preserved.
+.br
+标记包为已移除。包本身不会被卸载，仅将 ghdeb 管理记录标记为移除。历史记录保留。
+.SS set\-repo
+.B ghdeb set\-repo
+.I pkg
+.IB owner / repo
+.PP
+Set the GitHub repository for a package that was previously scanned but has
+no repository assigned.
+.br
+为之前扫描但未分配仓库的包设置 GitHub 仓库。
+.SS info
+.B ghdeb info
+.IB owner / repo
+.PP
+Show the latest release information for a repository, including matched
+download assets for the current architecture.
+.br
+显示仓库的最新 release 信息，包括匹配当前架构的下载资源。
+.SS version
+.B ghdeb version
+.PP
+Print the ghdeb version.
+.br
+显示 ghdeb 版本。
+.SH ARCHITECTURE MATCHING
+.B ghdeb
+automatically detects the system architecture via
+.B dpkg \-\-print\-architecture
+and matches release assets by filename patterns:
+.PP
+.B ghdeb
+通过
+.B dpkg \-\-print\-architecture
+自动检测系统架构，并按文件名模式匹配 release 资源：
+.TS
+tab(@);
+l l.
+System Arch@Matched Keywords
+amd64@amd64, x86_64, x86-64, x64
+arm64@arm64, aarch64
+armhf@armhf, armv7l, armv7
+i386@i386, x86, i686, 386
+.TE
+.SH CACHE
+.B ghdeb
+caches release information in
+.B ~/.cache/ghdeb/releases.json
+with a 24-hour TTL. Downloaded .deb files are cached in
+.BR ~/.cache/ghdeb/ .
+.PP
+.B ghdeb
+将 release 信息缓存在
+.B ~/.cache/ghdeb/releases.json
+中，TTL 为 24 小时。下载的 .deb 文件缓存在
+.B ~/.cache/ghdeb/
+中。
+.SH STATE
+Managed package records are stored in
+.BR ~/.local/state/ghdeb/installed.json .
+.PP
+已管理包的记录存储在
+.B ~/.local/state/ghdeb/installed.json
+中。
+.SH ENVIRONMENT
+.TP
+.B GITHUB_TOKEN
+.TQ
+.B GH_TOKEN
+GitHub personal access token. Increases API rate limit from 60 requests/hour
+(unauthenticated) to 5,000 requests/hour.
+.br
+GitHub 个人访问令牌。将 API 速率限制从 60 次/小时（未认证）提高到 5,000 次/小时。
+.SH LOCALE
+Output language is determined by the
+.B LANG
+environment variable. Chinese (zh_*) produces Chinese output; all other
+locales produce English output.
+.PP
+输出语言由
+.B LANG
+环境变量决定。中文 (zh_*) 产生中文输出；其他所有 locale 产生英文输出。
+.SH FILES
+.TP
+.B ~/.cache/ghdeb/releases.json
+Release version cache (24h TTL).
+.br
+Release 版本缓存（24 小时 TTL）。
+.TP
+.B ~/.cache/ghdeb/*.deb
+Downloaded .deb package cache.
+.br
+已下载的 .deb 包缓存。
+.TP
+.B ~/.local/state/ghdeb/installed.json
+Managed package state records.
+.br
+已管理包的状态记录。
+.SH EXIT STATUS
+.TP
+.B 0
+Success.
+.TP
+.B 1
+Error (invalid arguments, network failure, install failure, etc.).
+.SH EXAMPLES
+.TP
+.B ghdeb install sharkdp/bat
+Install the latest version of bat.
+.br
+安装 bat 最新版。
+.TP
+.B ghdeb install sharkdp/bat@v0.25.0
+Install a specific version of bat.
+.br
+安装 bat 指定版本。
+.TP
+.B ghdeb upgrade
+Upgrade all managed packages.
+.br
+升级所有已管理的包。
+.TP
+.B ghdeb upgrade sharkdp/bat
+Upgrade only bat.
+.br
+仅升级 bat。
+.TP
+.B ghdeb scan --deep
+Scan for orphan packages, fetching Homepages for GitHub links.
+.br
+扫描 orphan 包，抓取 Homepage 查找 GitHub 链接。
+.TP
+.B ghdeb list --refresh
+List all packages, forcing a fresh check of latest versions.
+.br
+列出所有包，强制刷新最新版本检查。
+.TP
+.B ghdeb set\-repo draw.io jgraph/drawio
+Assign a GitHub repo to a previously scanned package.
+.br
+为之前扫描的包分配 GitHub 仓库。
+.SH SEE ALSO
+.BR dpkg (1),
+.BR apt (8)
+.SH AUTHOR
+Written by LeisureLinux.
+.SH "REPORTING BUGS"
+Report issues at <https://github.com/LeisureLinux/ghdeb/issues>
