@@ -1,0 +1,20 @@
+Package: ghdeb
+Version: 0.3.0
+Section: utils
+Priority: optional
+Architecture: amd64
+Depends: dpkg
+Maintainer: LeisureLinux <albertxu@freelamp.com>
+Homepage: https://github.com/LeisureLinux/ghdeb
+Description: Install .deb packages from GitHub Releases
+ ghdeb is a lightweight CLI tool that simplifies installing and upgrading
+ .deb packages directly from GitHub Releases. It handles architecture
+ detection, asset matching, downloading, and installation in a single command.
+ .
+ Features:
+  - Auto-detect system architecture
+  - Smart asset matching from GitHub releases
+  - Version tracking and upgrade management
+  - Orphan package scanning
+  - Bilingual output (Chinese/English)
+  - Release info caching for faster queries
