@@ -382,6 +382,12 @@ func cmdList() error {
 		if r.Removed {
 			status = "❌ removed"
 		}
+		// 检查是否有新版本（需要调用 GitHub API）
+		if !r.Removed && r.Owner != "" && r.Repo != "" {
+			if isUpgradeAvailable(r) {
+				status = "🔄 可升级"
+			}
+		}
 
 		sysVer := r.SystemVersion
 		if sysVer == "" {
@@ -394,10 +400,19 @@ func cmdList() error {
 		}
 
 		// 拼接包名:仓库
-		pkgSlug := r.Owner + "/" + r.Repo
-		if r.PkgName != "" {
-			pkgSlug = r.PkgName + ":" + r.Owner + "/" + r.Repo
+		var repoPart string
+		if r.Owner != "" && r.Repo != "" {
+			repoPart = r.Owner + "/" + r.Repo
+		} else {
+			// 根据 locale 显示"无"或"None"
+			lang := os.Getenv("LANG")
+			if strings.HasPrefix(lang, "zh") {
+				repoPart = "无"
+			} else {
+				repoPart = "None"
+			}
 		}
+		pkgSlug := r.PkgName + ":" + repoPart
 
 		fmt.Printf("%-35s %-12s %-12s %-10s %-19s\n",
 			pkgSlug,
@@ -670,6 +685,16 @@ func formatTime(s string) string {
 		return s
 	}
 	return t.Format("2006-01-02 15:04:05")
+}
+
+// isUpgradeAvailable 检查是否有新版本
+func isUpgradeAvailable(r *state.PackageRecord) bool {
+	client := gh.NewClient()
+	release, err := client.GetLatestRelease(r.Owner, r.Repo)
+	if err != nil {
+		return false
+	}
+	return release.TagName != r.CurrentVersion
 }
 
 func truncate(s string, maxLen int) string {
