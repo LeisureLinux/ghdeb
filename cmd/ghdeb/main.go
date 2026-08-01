@@ -16,7 +16,7 @@ import (
 	"github.com/leisurelinux/ghdeb/internal/state"
 )
 
-const version = "0.3.7"
+const version = "0.3.8"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -761,13 +761,25 @@ func downloadAsset(client *gh.Client, asset gh.Asset) (string, error) {
 	return destPath, nil
 }
 
+// noninteractiveEnv 返回设置了 DEBIAN_FRONTEND=noninteractive 的环境变量
+// 过滤掉已有的 DEBIAN_FRONTEND 避免重复键值
+func noninteractiveEnv() []string {
+	env := os.Environ()
+	filtered := make([]string, 0, len(env))
+	for _, e := range env {
+		if !strings.HasPrefix(e, "DEBIAN_FRONTEND=") {
+			filtered = append(filtered, e)
+		}
+	}
+	return append(filtered, "DEBIAN_FRONTEND=noninteractive")
+}
+
 func installDeb(path string) error {
 	fmt.Printf(T("📦 安装中 (dpkg -i)...\n", "📦 Installing (dpkg -i)...\n"))
 	cmd := exec.Command("sudo", "dpkg", "-i", path)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	// 设置非交互式前端，避免 debconf 告警
-	cmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
+	cmd.Env = noninteractiveEnv()
 	if err := cmd.Run(); err != nil {
 		// 检查是否需要交互式配置
 		errMsg := err.Error()
@@ -781,7 +793,7 @@ func installDeb(path string) error {
 		fixCmd := exec.Command("sudo", "apt-get", "install", "-f", "-y")
 		fixCmd.Stdout = os.Stdout
 		fixCmd.Stderr = os.Stderr
-		fixCmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
+		fixCmd.Env = noninteractiveEnv()
 		if fixErr := fixCmd.Run(); fixErr != nil {
 			return fmt.Errorf(T("安装失败且依赖修复失败: %w", "install failed and dependency fix failed: %w"), fixErr)
 		}
