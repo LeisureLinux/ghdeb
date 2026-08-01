@@ -16,7 +16,7 @@ import (
 	"github.com/leisurelinux/ghdeb/internal/state"
 )
 
-const version = "0.3.5"
+const version = "0.3.6"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -749,7 +749,7 @@ func downloadAsset(client *gh.Client, asset gh.Asset) (string, error) {
 		return "", err
 	}
 	destPath := filepath.Join(cacheDir, asset.Name)
-	fmt.Printf(T("⬇️  下载中...\n", "⬇️  Downloading...\n"))
+	fmt.Printf(T("⬇️  下载中: %s\n", "⬇️  Downloading: %s\n"), asset.BrowserDownloadURL)
 	err = client.DownloadAsset(asset, destPath, func(downloaded, total int64) {
 		printProgress(downloaded, total)
 	})
@@ -769,13 +769,21 @@ func installDeb(path string) error {
 	// 设置非交互式前端，避免 debconf 告警
 	cmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
 	if err := cmd.Run(); err != nil {
+		// 检查是否需要交互式配置
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "debconf") || strings.Contains(errMsg, "configuration") {
+			fmt.Printf(T("\n⚠️  此包需要交互式配置，请手动运行:\n", "\n⚠️  This package requires interactive configuration, please run manually:\n"))
+			fmt.Printf("  sudo dpkg -i %s\n\n", path)
+			return fmt.Errorf(T("需要交互式配置", "requires interactive configuration"))
+		}
+		
 		fmt.Printf(T("🔧 尝试修复依赖 (apt-get install -f)...\n", "🔧 Trying to fix dependencies (apt-get install -f)...\n"))
 		fixCmd := exec.Command("sudo", "apt-get", "install", "-f", "-y")
 		fixCmd.Stdout = os.Stdout
 		fixCmd.Stderr = os.Stderr
 		fixCmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
 		if fixErr := fixCmd.Run(); fixErr != nil {
-			return fmt.Errorf("安装失败且依赖修复失败: %w", fixErr)
+			return fmt.Errorf(T("安装失败且依赖修复失败: %w", "install failed and dependency fix failed: %w"), fixErr)
 		}
 	}
 	return nil
