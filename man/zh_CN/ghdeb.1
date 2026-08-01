@@ -1,0 +1,144 @@
+.TH GHDEB 1 "2026-08-01" "ghdeb 0.3.1" "用户命令"
+.SH 名称
+ghdeb \- 从 GitHub Releases 安装 .deb 包
+.SH 概要
+.B ghdeb
+.I 命令
+.RI [ 参数 ]
+.SH 描述
+.B ghdeb
+是一个轻量级命令行工具，简化从 GitHub Releases 直接安装和升级 .deb 包的流程。
+它在一个命令中处理架构检测、资源匹配、下载和安装。
+.SH 命令
+.SS install
+.B ghdeb install
+.IB owner / repo [ @tag ]
+.PP
+安装或升级包到指定版本。如未指定 tag，则使用最新稳定版。
+.SS upgrade
+.B ghdeb upgrade
+.RI [ owner/repo ]
+.PP
+升级已管理的包。如未指定包名，则升级所有已管理的包。升级前自动扫描 orphan 包。
+.SS scan
+.B ghdeb scan
+.RB [ \-\-deep ]
+.PP
+扫描系统中的 GitHub 来源 orphan 包（无 apt 源的已安装包），并可选择纳入管理。
+.TP
+.B \-\-deep
+同时抓取每个包的 Homepage URL，尝试从中提取 GitHub 仓库链接。
+.SS list
+.B ghdeb list
+.RB [ \-\-refresh ]
+.PP
+列出所有已管理的包，显示记录版本、系统版本、最新可用版本和升级状态。
+.TP
+.B \-\-refresh
+强制刷新版本缓存，清除所有缓存的 release 数据并从 GitHub API 重新获取。
+.SS history
+.B ghdeb history
+.IB owner / repo
+.PP
+显示某个包的完整操作历史（安装、升级、移除）。
+.SS remove
+.B ghdeb remove
+.IB owner / repo
+.PP
+标记包为已移除。包本身不会被卸载，仅将 ghdeb 管理记录标记为移除。历史记录保留。
+.SS set\-repo
+.B ghdeb set\-repo
+.I pkg
+.IB owner / repo
+.PP
+为之前扫描但未分配仓库的包设置 GitHub 仓库。
+.SS info
+.B ghdeb info
+.IB owner / repo
+.PP
+显示仓库的最新 release 信息，包括匹配当前架构的下载资源。
+.SS version
+.B ghdeb version
+.PP
+显示 ghdeb 版本。
+.SH 架构匹配
+.B ghdeb
+通过
+.B dpkg \-\-print\-architecture
+自动检测系统架构，并按文件名模式匹配 release 资源：
+.TS
+tab(@);
+l l.
+系统架构@匹配关键词
+amd64@amd64, x86_64, x86-64, x64
+arm64@arm64, aarch64
+armhf@armhf, armv7l, armv7
+i386@i386, x86, i686, 386
+.TE
+.SH 缓存
+.B ghdeb
+将 release 信息缓存在
+.B ~/.cache/ghdeb/releases.json
+中，TTL 为 24 小时。下载的 .deb 文件缓存在
+.B ~/.cache/ghdeb/
+中。
+.SH 状态文件
+已管理包的记录存储在
+.B ~/.local/state/ghdeb/installed.json
+中。
+.SH 环境变量
+.TP
+.B GITHUB_TOKEN
+.TQ
+.B GH_TOKEN
+GitHub 个人访问令牌。将 API 速率限制从 60 次/小时（未认证）提高到 5,000 次/小时。
+.SH 语言环境
+输出语言由
+.B LANG
+环境变量决定。中文 (zh_*) 产生中文输出；其他所有 locale 产生英文输出。
+.SH 文件
+.TP
+.B ~/.cache/ghdeb/releases.json
+Release 版本缓存（24 小时 TTL）。
+.TP
+.B ~/.cache/ghdeb/*.deb
+已下载的 .deb 包缓存。
+.TP
+.B ~/.local/state/ghdeb/installed.json
+已管理包的状态记录。
+.SH 退出状态
+.TP
+.B 0
+成功。
+.TP
+.B 1
+错误（参数无效、网络失败、安装失败等）。
+.SH 示例
+.TP
+.B ghdeb install sharkdp/bat
+安装 bat 最新版。
+.TP
+.B ghdeb install sharkdp/bat@v0.25.0
+安装 bat 指定版本。
+.TP
+.B ghdeb upgrade
+升级所有已管理的包。
+.TP
+.B ghdeb upgrade sharkdp/bat
+仅升级 bat。
+.TP
+.B ghdeb scan --deep
+扫描 orphan 包，抓取 Homepage 查找 GitHub 链接。
+.TP
+.B ghdeb list --refresh
+列出所有包，强制刷新最新版本检查。
+.TP
+.B ghdeb set\-repo draw.io jgraph/drawio
+为之前扫描的包分配 GitHub 仓库。
+.SH 参见
+.BR dpkg (1),
+.BR apt (8)
+.SH 作者
+由 LeisureLinux 编写。
+.SH 报告错误
+在 <https://github.com/LeisureLinux/ghdeb/issues> 报告问题

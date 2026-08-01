@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-VERSION="0.3.0"
+VERSION="0.3.1"
 ARCH="amd64"
 PKG_NAME="ghdeb_${VERSION}_${ARCH}"
 PKG_DIR="dist/${PKG_NAME}"
@@ -19,14 +19,22 @@ go build -ldflags="-s -w" -o dist/ghdeb ./cmd/ghdeb/
 echo "📁 创建包目录结构..."
 mkdir -p ${PKG_DIR}/DEBIAN
 mkdir -p ${PKG_DIR}/usr/bin
+# 默认 man（英文）
 mkdir -p ${PKG_DIR}/usr/share/man/man1
+# 中文 man
+mkdir -p ${PKG_DIR}/usr/share/man/zh_CN/man1
 
 # 复制文件
 cp dist/ghdeb ${PKG_DIR}/usr/bin/ghdeb
 chmod 755 ${PKG_DIR}/usr/bin/ghdeb
 
-cp man/ghdeb.1 ${PKG_DIR}/usr/share/man/man1/ghdeb.1
+# 英文版 man（默认）
+cp man/en_US/ghdeb.1 ${PKG_DIR}/usr/share/man/man1/ghdeb.1
 chmod 644 ${PKG_DIR}/usr/share/man/man1/ghdeb.1
+
+# 中文版 man
+cp man/zh_CN/ghdeb.1 ${PKG_DIR}/usr/share/man/zh_CN/man1/ghdeb.1
+chmod 644 ${PKG_DIR}/usr/share/man/zh_CN/man1/ghdeb.1
 
 # 复制控制文件
 cp debian/control ${PKG_DIR}/DEBIAN/control
