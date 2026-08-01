@@ -16,7 +16,7 @@ import (
 	"github.com/leisurelinux/ghdeb/internal/state"
 )
 
-const version = "0.3.10"
+const version = "0.3.11"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -257,6 +257,13 @@ func cmdUpgrade(args []string) error {
 				repoKey := owner + "/" + repo
 				rec := st.Get(repoKey)
 				if rec != nil {
+					// 检查实际安装状态
+					if rec.PkgName != "" && !deb.IsPackageInstalled(rec.PkgName) {
+						if !rec.Removed {
+							rec.Removed = true
+							fmt.Printf(T("⚠️  %s 未安装，将重新安装\n", "⚠️  %s not installed, will reinstall\n"), repoKey)
+						}
+					}
 					targets = append(targets, upgradeTarget{owner: owner, repo: repo, pkg: rec})
 					continue
 				}
@@ -264,6 +271,13 @@ func cmdUpgrade(args []string) error {
 			// 尝试作为包名查找
 			rec := st.GetByPkgName(arg)
 			if rec != nil && rec.Owner != "" && rec.Repo != "" {
+				// 检查实际安装状态
+				if !deb.IsPackageInstalled(rec.PkgName) {
+					if !rec.Removed {
+						rec.Removed = true
+						fmt.Printf(T("⚠️  %s/%s 未安装，将重新安装\n", "⚠️  %s/%s not installed, will reinstall\n"), rec.Owner, rec.Repo)
+					}
+				}
 				targets = append(targets, upgradeTarget{owner: rec.Owner, repo: rec.Repo, pkg: rec})
 			} else {
 				fmt.Fprintf(os.Stderr, "⚠️  %s %s: %s\n", T("跳过", "Skip"), arg, T("未找到该包或无仓库信息", "package not found or no repo info"))
