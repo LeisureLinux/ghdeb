@@ -20,48 +20,68 @@ except:
     fi
 }
 
+_ghdeb_get_catalog_names() {
+    # 获取 catalog 中的短名称
+    local catalog_file="/usr/share/ghdeb/catalog.toml"
+    local user_catalog="${XDG_CONFIG_HOME:-$HOME/.config}/ghdeb/catalog.toml"
+    
+    # 读取系统 catalog
+    if [ -f "$catalog_file" ]; then
+        grep '^\[' "$catalog_file" | sed 's/^\[//;s/\]$//'
+    fi
+    # 读取用户 catalog
+    if [ -f "$user_catalog" ]; then
+        grep '^\[' "$user_catalog" | sed 's/^\[//;s/\]$//'
+    fi
+}
+
 _ghdeb() {
     local cur prev commands
     COMPREPLY=()
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
     
-    commands="install upgrade scan list history remove set-repo info version help"
+    commands="install upgrade reinstall scan search list ls show info history remove rm purge clean set-repo test-homepage version help"
     
-    # 补全命令
+    # 如果是第一个参数，补全子命令
     if [ $COMP_CWORD -eq 1 ]; then
         COMPREPLY=( $(compgen -W "$commands" -- "$cur") )
         return 0
     fi
     
-    # 补全包名
+    # 根据子命令补全参数
     case "${COMP_WORDS[1]}" in
-        install|info)
-            # 这些命令需要 owner/repo 格式，不提供补全
+        install)
+            # 补全 catalog 包名 + 已管理包
+            local names=$(_ghdeb_get_catalog_names)
+            local pkgs=$(_ghdeb_get_packages)
+            COMPREPLY=( $(compgen -W "$names $pkgs" -- "$cur") )
             ;;
-        upgrade|history|remove)
+        upgrade|reinstall)
             # 补全已管理的包
-            local packages=$(_ghdeb_get_packages)
-            COMPREPLY=( $(compgen -W "$packages" -- "$cur") )
+            COMPREPLY=( $(compgen -W "$(_ghdeb_get_packages)" -- "$cur") )
             ;;
-        set-repo)
-            # 第一个参数是包名，第二个是 owner/repo
-            if [ $COMP_CWORD -eq 2 ]; then
-                local packages=$(_ghdeb_get_packages)
-                COMPREPLY=( $(compgen -W "$packages" -- "$cur") )
-            fi
+        show|info)
+            # 补全 catalog 包名 + 已管理包
+            local names=$(_ghdeb_get_catalog_names)
+            local pkgs=$(_ghdeb_get_packages)
+            COMPREPLY=( $(compgen -W "$names $pkgs" -- "$cur") )
+            ;;
+        remove|rm|purge|history)
+            # 补全已管理的包
+            COMPREPLY=( $(compgen -W "$(_ghdeb_get_packages)" -- "$cur") )
             ;;
         scan)
-            # 补全 --deep 选项
-            if [[ "$cur" == -* ]]; then
-                COMPREPLY=( $(compgen -W "--deep" -- "$cur") )
-            fi
+            COMPREPLY=( $(compgen -W "--deep" -- "$cur") )
             ;;
-        list)
-            # 补全 --refresh 选项
-            if [[ "$cur" == -* ]]; then
-                COMPREPLY=( $(compgen -W "--refresh" -- "$cur") )
-            fi
+        list|ls)
+            COMPREPLY=( $(compgen -W "--refresh" -- "$cur") )
+            ;;
+        clean)
+            COMPREPLY=( $(compgen -W "--dry-run" -- "$cur") )
+            ;;
+        search)
+            # 不补全，用户输入搜索词
             ;;
     esac
     

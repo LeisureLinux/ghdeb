@@ -3,6 +3,7 @@
 BINARY = ghdeb
 DESTDIR ?= /usr/local/bin
 MANDIR ?= /usr/local/share/man
+DATADIR ?= /usr/share
 
 build:
 	go build -ldflags="-s -w" -o $(BINARY) ./cmd/ghdeb/
@@ -22,9 +23,16 @@ install: build
 	# 安装 zsh 补全
 	install -d /usr/share/zsh/site-functions
 	install -m 644 completion/$(BINARY).zsh /usr/share/zsh/site-functions/_$(BINARY)
+	# 安装 fish 补全
+	install -d $(DATADIR)/fish/vendor_completions.d
+	install -m 644 completion/$(BINARY).fish $(DATADIR)/fish/vendor_completions.d/_$(BINARY)
+	# 安装包目录 (catalog.toml)
+	install -d $(DATADIR)/ghdeb
+	install -m 644 catalog/catalog.toml $(DATADIR)/ghdeb/catalog.toml
 	@echo "提示: 运行 'mandb' 更新 man 数据库 (可选)"
 	@echo "提示: bash 用户请运行 'source /usr/share/bash-completion/completions/ghdeb' 或重新登录"
 	@echo "提示: zsh 用户请运行 'compinit' 或重新登录"
+	@echo "提示: fish 用户补全已自动安装"
 
 clean:
 	go clean

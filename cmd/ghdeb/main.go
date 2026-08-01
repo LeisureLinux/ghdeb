@@ -11,15 +11,15 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/leisurelinux/ghdeb/internal/catalog"
 	"github.com/leisurelinux/ghdeb/internal/deb"
 	gh "github.com/leisurelinux/ghdeb/internal/github"
 	"github.com/leisurelinux/ghdeb/internal/state"
 )
 
-const version = "0.3.17"
+const version = "0.4.0"
 
 func main() {
-	// 显示版本信息
 	fmt.Printf(T("ghdeb v%s - 轻量级孤立包 deb 升级工具 © LeisureLinux\n", "ghdeb v%s - a lightweight orphan deb upgrader © LeisureLinux\n"), version)
 
 	if len(os.Args) < 2 {
@@ -36,20 +36,30 @@ func main() {
 		err = cmdInstall(args)
 	case "upgrade":
 		err = cmdUpgrade(args)
+	case "reinstall":
+		err = cmdReinstall(args)
 	case "scan":
 		err = cmdScan(args)
+	case "search":
+		err = cmdSearch(args)
 	case "list", "ls":
 		err = cmdList(args)
 	case "history":
 		err = cmdHistory(args)
 	case "remove", "rm":
 		err = cmdRemove(args)
+	case "purge":
+		err = cmdPurge(args)
+	case "show":
+		err = cmdShow(args)
+	case "info":
+		err = cmdShow(args) // info 作为 show 的别名
+	case "clean":
+		err = cmdClean(args)
 	case "set-repo":
 		err = cmdSetRepo(args)
 	case "test-homepage":
 		err = cmdTestHomepage(args)
-	case "info":
-		err = cmdInfo(args)
 	case "version", "--version", "-v":
 		fmt.Printf("ghdeb %s\n", version)
 	case "help", "--help", "-h":
@@ -71,76 +81,108 @@ func printUsage() {
 		fmt.Print(`ghdeb - 从 GitHub Releases 安装 .deb 包
 
 用法:
-  ghdeb install <owner/repo>[@tag]   安装（或升级到）指定版本
-  ghdeb upgrade [owner/repo]         升级包（自动扫描孤立包，不指定则升级所有）
-  ghdeb scan [--deep]                扫描系统中的 GitHub 孤立包并纳入管理
-                                     --deep: 抓取 Homepage 页面查找 GitHub 链接
-  ghdeb list [--refresh]             列出所有包（含已移除），--refresh 强制刷新版本缓存
-  ghdeb history <owner/repo>         查看某包的完整操作历史
-  ghdeb remove <owner/repo>          标记移除（保留历史记录）
-  ghdeb set-repo <pkg> <owner/repo>  为包设置 GitHub 仓库
-  ghdeb info <owner/repo>            查看最新 release 信息
-  ghdeb version                      显示版本
+  ghdeb install <pkg|owner/repo>[@tag]  安装（支持短名称或 owner/repo）
+  ghdeb upgrade [pkg]                   升级包（不指定则升级所有）
+  ghdeb reinstall <pkg>                 重新安装指定包
+  ghdeb scan [--deep]                   扫描系统中的 GitHub 孤立包并纳入管理
+  ghdeb search <pattern>                在包目录中搜索
+  ghdeb list [--refresh]                列出所有包（含已移除）
+  ghdeb show <pkg>                      显示包的完整信息
+  ghdeb history <pkg>                   查看某包的完整操作历史
+  ghdeb remove <pkg>                    标记移除（保留历史记录，不卸载）
+  ghdeb purge <pkg>                     卸载软件并清除配置文件
+  ghdeb clean [--dry-run]               清理下载的 .deb 缓存
+  ghdeb set-repo <pkg> <owner/repo>     为包设置 GitHub 仓库
+  ghdeb info <pkg>                      show 的别名
+  ghdeb version                         显示版本
+
+包目录:
+  系统目录: /usr/share/ghdeb/catalog.toml
+  用户目录: ~/.config/ghdeb/catalog.toml（同名覆盖系统条目）
 
 环境变量:
-  GITHUB_TOKEN / GH_TOKEN            GitHub 个人访问令牌（提高 API 限额）
-
-Shell 补全:
-  安装后自动加载，或手动 source:
-    bash: source /usr/share/bash-completion/completions/ghdeb
-    zsh:  compinit
+  GITHUB_TOKEN / GH_TOKEN               GitHub 个人访问令牌（提高 API 限额）
 
 示例:
-  ghdeb install LeisureLinux/ghdeb    安装 ghdeb 最新版
-  ghdeb scan [--deep]                扫描系统中的 GitHub 孤立包并纳入管理
-                                     --deep: 抓取 Homepage 页面查找 GitHub 链接
-  ghdeb upgrade                      升级所有已管理的包
-  ghdeb history LeisureLinux/ghdeb    查看 ghdeb 的安装/升级/移除历史
-  ghdeb set-repo ghdeb LeisureLinux/ghdeb  设置 ghdeb 的仓库
+  ghdeb install bat                     通过短名称安装 bat
+  ghdeb install sharkdp/bat             通过 owner/repo 安装
+  ghdeb install LeisureLinux/ghdeb@v0.4.0  安装指定版本
+  ghdeb search monitor                  搜索包含 monitor 的包
+  ghdeb show rustdesk                   显示包信息
+  ghdeb clean                           清理缓存
+  ghdeb purge rustdesk                  卸载 rustdesk
 `)
 	} else {
 		fmt.Print(`ghdeb - Install .deb packages from GitHub Releases
 
 Usage:
-  ghdeb install <owner/repo>[@tag]   Install (or upgrade to) specified version
-  ghdeb upgrade [owner/repo]         Upgrade packages (auto-scan orphans, upgrade all if unspecified)
-  ghdeb scan [--deep]                Scan system for GitHub orphan packages and add to management
-                                     --deep: Fetch Homepage to find GitHub links
-  ghdeb list [--refresh]             List all packages (including removed), --refresh to force refresh cache
-  ghdeb history <owner/repo>         View complete operation history for a package
-  ghdeb remove <owner/repo>          Mark as removed (preserve history)
-  ghdeb set-repo <pkg> <owner/repo>  Set GitHub repository for a package
-  ghdeb info <owner/repo>            View latest release info
-  ghdeb version                      Show version
+  ghdeb install <pkg|owner/repo>[@tag]  Install (short name or owner/repo)
+  ghdeb upgrade [pkg]                   Upgrade packages (all if unspecified)
+  ghdeb reinstall <pkg>                 Reinstall a package
+  ghdeb scan [--deep]                   Scan system for GitHub orphan packages
+  ghdeb search <pattern>                Search in package catalog
+  ghdeb list [--refresh]                List all packages (including removed)
+  ghdeb show <pkg>                      Show package details
+  ghdeb history <pkg>                   View operation history
+  ghdeb remove <pkg>                    Mark as removed (keep history, don't uninstall)
+  ghdeb purge <pkg>                     Uninstall and purge config files
+  ghdeb clean [--dry-run]               Clean downloaded .deb cache
+  ghdeb set-repo <pkg> <owner/repo>     Set GitHub repository for a package
+  ghdeb info <pkg>                      Alias for show
+  ghdeb version                         Show version
+
+Catalog:
+  System: /usr/share/ghdeb/catalog.toml
+  User:   ~/.config/ghdeb/catalog.toml (overrides system entries)
 
 Environment Variables:
-  GITHUB_TOKEN / GH_TOKEN            GitHub personal access token (increases API rate limit)
-
-Shell Completion:
-  Auto-loaded after installation, or manually source:
-    bash: source /usr/share/bash-completion/completions/ghdeb
-    zsh:  compinit
+  GITHUB_TOKEN / GH_TOKEN               GitHub personal access token
 
 Examples:
-  ghdeb install LeisureLinux/ghdeb    Install latest ghdeb
-  ghdeb scan [--deep]                Scan system for GitHub orphan packages
-                                     --deep: Fetch Homepage to find GitHub links
-  ghdeb upgrade                      Upgrade all managed packages
-  ghdeb history LeisureLinux/ghdeb    View ghdeb's install/upgrade/remove history
-  ghdeb set-repo ghdeb LeisureLinux/ghdeb  Set ghdeb's repository
+  ghdeb install bat                     Install via short name
+  ghdeb install sharkdp/bat             Install via owner/repo
+  ghdeb install LeisureLinux/ghdeb@v0.4.0  Install specific version
+  ghdeb search monitor                  Search catalog for monitor
+  ghdeb show rustdesk                   Show package info
+  ghdeb clean                           Clean cache
+  ghdeb purge rustdesk                  Uninstall rustdesk
 `)
 	}
+}
+
+// resolvePkgArg 解析包参数：支持 owner/repo 和短名称（通过 catalog）
+func resolvePkgArg(arg string) (owner, repo string, err error) {
+	// 先尝试 owner/repo 格式
+	owner, repo, parseErr := gh.ParseRepo(arg)
+	if parseErr == nil {
+		return owner, repo, nil
+	}
+	// 尝试 catalog 短名称
+	cat, catErr := catalog.Load()
+	if catErr != nil {
+		return "", "", fmt.Errorf("无法解析 %s 且加载目录失败: %w", arg, catErr)
+	}
+	entry := cat.Lookup(arg)
+	if entry == nil {
+		return "", "", fmt.Errorf("未找到包 %s（既不是有效的 owner/repo，也不在目录中）", arg)
+	}
+	owner, repo, err = gh.ParseRepo(entry.Repo)
+	if err != nil {
+		return "", "", fmt.Errorf("目录中 %s 的仓库 %s 格式无效: %w", arg, entry.Repo, err)
+	}
+	fmt.Printf(T("📖 目录匹配: %s → %s/%s\n", "📖 Catalog match: %s → %s/%s\n"), arg, owner, repo)
+	return owner, repo, nil
 }
 
 // --- install ---
 
 func cmdInstall(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("请指定仓库，如: ghdeb install LeisureLinux/ghdeb")
+		return fmt.Errorf("请指定包名或仓库，如: ghdeb install bat 或 ghdeb install LeisureLinux/ghdeb")
 	}
 
 	repoStr, tag := parseRepoSpec(args[0])
-	owner, repo, err := gh.ParseRepo(repoStr)
+	owner, repo, err := resolvePkgArg(repoStr)
 	if err != nil {
 		return err
 	}
@@ -183,7 +225,6 @@ func cmdInstall(args []string) error {
 		return err
 	}
 
-	// 提取 deb 包名
 	pkgName := deb.ExtractPkgName(destPath)
 
 	if err := installDeb(destPath); err != nil {
@@ -244,7 +285,6 @@ func cmdUpgrade(args []string) error {
 		fmt.Println()
 	}
 
-	// 解析参数：支持包名或 owner/repo
 	type upgradeTarget struct {
 		owner string
 		repo  string
@@ -254,55 +294,51 @@ func cmdUpgrade(args []string) error {
 
 	if len(args) > 0 {
 		for _, arg := range args {
-			// 先尝试作为 owner/repo 解析
-			owner, repo, parseErr := gh.ParseRepo(arg)
-			if parseErr == nil {
-				repoKey := owner + "/" + repo
-				rec := st.Get(repoKey)
-				if rec != nil {
-					// 检查实际安装状态
-					if rec.PkgName != "" && !deb.IsPackageInstalled(rec.PkgName) {
+			owner, repo, resolveErr := resolvePkgArg(arg)
+			if resolveErr != nil {
+				// 尝试作为 pkg name 查找 state
+				rec := st.GetByPkgName(arg)
+				if rec != nil && rec.Owner != "" && rec.Repo != "" {
+					if !deb.IsPackageInstalled(rec.PkgName) {
 						if !rec.Removed {
 							rec.Removed = true
-							fmt.Printf(T("⚠️  %s 未安装，将重新安装\n", "⚠️  %s not installed, will reinstall\n"), repoKey)
+							fmt.Printf(T("⚠️  %s/%s 未安装，将重新安装\n", "⚠️  %s/%s not installed, will reinstall\n"), rec.Owner, rec.Repo)
 						}
 					}
-					targets = append(targets, upgradeTarget{owner: owner, repo: repo, pkg: rec})
-					continue
+					targets = append(targets, upgradeTarget{owner: rec.Owner, repo: rec.Repo, pkg: rec})
+				} else {
+					fmt.Fprintf(os.Stderr, "⚠️  %s %s: %s\n", T("跳过", "Skip"), arg, T("未找到该包", "package not found"))
 				}
+				continue
 			}
-			// 尝试作为包名查找
-			rec := st.GetByPkgName(arg)
-			if rec != nil && rec.Owner != "" && rec.Repo != "" {
-				// 检查实际安装状态
-				if !deb.IsPackageInstalled(rec.PkgName) {
+			repoKey := owner + "/" + repo
+			rec := st.Get(repoKey)
+			if rec != nil {
+				if rec.PkgName != "" && !deb.IsPackageInstalled(rec.PkgName) {
 					if !rec.Removed {
 						rec.Removed = true
-						fmt.Printf(T("⚠️  %s/%s 未安装，将重新安装\n", "⚠️  %s/%s not installed, will reinstall\n"), rec.Owner, rec.Repo)
+						fmt.Printf(T("⚠️  %s 未安装，将重新安装\n", "⚠️  %s not installed, will reinstall\n"), repoKey)
 					}
 				}
-				targets = append(targets, upgradeTarget{owner: rec.Owner, repo: rec.Repo, pkg: rec})
+				targets = append(targets, upgradeTarget{owner: owner, repo: repo, pkg: rec})
 			} else {
-				fmt.Fprintf(os.Stderr, "⚠️  %s %s: %s\n", T("跳过", "Skip"), arg, T("未找到该包或无仓库信息", "package not found or no repo info"))
+				// 未管理，但 catalog 能解析，直接安装
+				targets = append(targets, upgradeTarget{owner: owner, repo: repo, pkg: nil})
 			}
 		}
 	} else {
-		// 遍历所有包（包括已移除的），检查实际安装状态
 		for _, r := range st.List() {
 			if r.Owner == "" || r.Repo == "" {
 				continue
 			}
-			// 检查包是否实际安装在系统上
 			installed := false
 			if r.PkgName != "" {
 				installed = deb.IsPackageInstalled(r.PkgName)
 			}
-			// 如果包已移除但实际还在系统上，恢复状态
 			if r.Removed && installed {
 				r.Removed = false
 				fmt.Printf(T("📦 %s/%s 仍在系统上，恢复管理\n", "📦 %s/%s still installed, restoring management\n"), r.Owner, r.Repo)
 			}
-			// 包含所有有 owner/repo 的包（无论 Removed 状态）
 			targets = append(targets, upgradeTarget{owner: r.Owner, repo: r.Repo, pkg: r})
 		}
 	}
@@ -328,17 +364,16 @@ func cmdUpgrade(args []string) error {
 			fmt.Fprintf(os.Stderr, "⚠️  %s: %v\n", T("获取 release 失败", "Get release failed"), getErr)
 			continue
 		}
-		// 升级时获取到的版本写入缓存
 		client.SetCachedRelease(t.owner, t.repo, release.TagName)
 
-		if t.pkg.CurrentVersion == release.TagName && !t.pkg.Removed {
+		if t.pkg != nil && t.pkg.CurrentVersion == release.TagName && !t.pkg.Removed {
 			fmt.Printf(T("✅ 已是最新版本 %s\n", "✅ Already latest version %s\n"), release.TagName)
 			continue
 		}
-		if !t.pkg.Removed {
-			fmt.Printf(T("📦 发现新版本: %s → %s\n", "📦 New version found: %s → %s\n"), t.pkg.CurrentVersion, release.TagName)
+		if t.pkg == nil || t.pkg.Removed {
+			fmt.Printf(T("📦 安装: %s\n", "📦 Installing: %s\n"), release.TagName)
 		} else {
-			fmt.Printf(T("📦 重新安装: %s\n", "📦 Reinstalling: %s\n"), release.TagName)
+			fmt.Printf(T("📦 发现新版本: %s → %s\n", "📦 New version found: %s → %s\n"), t.pkg.CurrentVersion, release.TagName)
 		}
 
 		asset, findErr := gh.FindDebAsset(release, arch)
@@ -357,7 +392,6 @@ func cmdUpgrade(args []string) error {
 			continue
 		}
 
-		// 提取 deb 包名
 		pkgName := deb.ExtractPkgName(destPath)
 
 		if instErr := installDeb(destPath); instErr != nil {
@@ -370,15 +404,16 @@ func cmdUpgrade(args []string) error {
 			releaseURL = fmt.Sprintf("https://github.com/%s/%s/releases/tag/%s", t.owner, t.repo, release.TagName)
 		}
 
-		wasRemoved := t.pkg.Removed
-		if !t.pkg.Removed && t.pkg.CurrentVersion != "" {
+		if t.pkg != nil && !t.pkg.Removed && t.pkg.CurrentVersion != "" {
 			st.SetUpgrade(repoKey, release.TagName, asset.Name, destPath, releaseURL)
 		} else {
 			st.SetInstall(repoKey, t.owner, t.repo, release.TagName, asset.Name, destPath, releaseURL, arch.DpkgArch, pkgName)
 		}
 		upgraded++
-		if wasRemoved {
+		if t.pkg != nil && t.pkg.Removed {
 			fmt.Printf(T("✅ 重新安装完成: %s %s\n", "✅ Reinstall complete: %s %s\n"), repoKey, release.TagName)
+		} else if t.pkg == nil {
+			fmt.Printf(T("✅ 安装完成: %s %s\n", "✅ Install complete: %s %s\n"), repoKey, release.TagName)
 		} else {
 			fmt.Printf(T("✅ 升级完成: %s %s\n", "✅ Upgrade complete: %s %s\n"), repoKey, release.TagName)
 		}
@@ -391,8 +426,375 @@ func cmdUpgrade(args []string) error {
 	if upgraded == 0 {
 		fmt.Println(T("\n所有包已是最新", "\nAll packages are up to date"))
 	} else {
-		fmt.Printf(T("\n🎉 共升级 %d 个包\n", "\n🎉 Upgraded %d packages\n"), upgraded)
+		fmt.Printf(T("\n🎉 共处理 %d 个包\n", "\n🎉 Processed %d packages\n"), upgraded)
 	}
+	return nil
+}
+
+// --- reinstall ---
+
+func cmdReinstall(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("请指定包名，如: ghdeb reinstall bat")
+	}
+
+	owner, repo, err := resolvePkgArg(args[0])
+	if err != nil {
+		return err
+	}
+
+	repoKey := owner + "/" + repo
+	arch, err := deb.DetectArch()
+	if err != nil {
+		return err
+	}
+
+	client := gh.NewClient()
+	fmt.Printf(T("📦 获取最新 release...\n", "📦 Fetching latest release...\n"))
+	release, err := client.GetLatestRelease(owner, repo)
+	if err != nil {
+		return err
+	}
+	fmt.Printf(T("📌 版本: %s\n", "📌 Version: %s\n"), release.TagName)
+
+	asset, err := gh.FindDebAsset(release, arch)
+	if err != nil {
+		return err
+	}
+	fmt.Printf(T("📥 匹配文件: %s (%s)\n", "📥 Matched file: %s (%s)\n"), asset.Name, formatSize(asset.Size))
+
+	destPath, err := downloadAsset(client, *asset)
+	if err != nil {
+		return err
+	}
+
+	pkgName := deb.ExtractPkgName(destPath)
+
+	if err := installDeb(destPath); err != nil {
+		return err
+	}
+
+	releaseURL := release.HTMLURL
+	if releaseURL == "" {
+		releaseURL = fmt.Sprintf("https://github.com/%s/%s/releases/tag/%s", owner, repo, release.TagName)
+	}
+
+	st, err := state.Load()
+	if err != nil {
+		return err
+	}
+	// 记录为 reinstall
+	st.SetInstall(repoKey, owner, repo, release.TagName, asset.Name, destPath, releaseURL, arch.DpkgArch, pkgName)
+	// 标记最后一条历史为 reinstall
+	if rec := st.Get(repoKey); rec != nil && len(rec.History) > 0 {
+		rec.History[len(rec.History)-1].Reinstall = true
+	}
+	if err := st.Save(); err != nil {
+		return fmt.Errorf("保存状态失败: %w", err)
+	}
+
+	fmt.Printf(T("🎉 重装完成: %s %s\n", "🎉 Reinstall complete: %s %s\n"), repoKey, release.TagName)
+	return nil
+}
+
+// --- search ---
+
+func cmdSearch(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("请指定搜索关键词，如: ghdeb search monitor")
+	}
+	pattern := strings.Join(args, " ")
+
+	cat, err := catalog.Load()
+	if err != nil {
+		return fmt.Errorf("加载目录失败: %w", err)
+	}
+
+	results, err := cat.Search(pattern)
+	if err != nil {
+		return err
+	}
+
+	if len(results) == 0 {
+		fmt.Printf(T("未找到匹配 %q 的包\n", "No packages matching %q\n"), pattern)
+		return nil
+	}
+
+	// 按名称排序
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Name < results[j].Name
+	})
+
+	// 加载 state 检查安装状态
+	st, _ := state.Load()
+
+	fmt.Printf(T("找到 %d 个匹配的包:\n", "Found %d matching packages:\n"), len(results))
+	fmt.Printf("%-20s %-30s %s\n", T("名称", "Name"), T("仓库", "Repo"), T("简介", "Summary"))
+	fmt.Println(strings.Repeat("-", 80))
+
+	for _, r := range results {
+		entry := r.Entry
+		repoKey := entry.Repo
+		installed := false
+		if st != nil {
+			rec := st.Get(repoKey)
+			if rec != nil && !rec.Removed {
+				installed = true
+			}
+		}
+		status := ""
+		if installed {
+			status = " ✅"
+		}
+		summary := truncate(entry.Summary, 40)
+		fmt.Printf("%-20s %-30s %s%s\n", r.Name, repoKey, summary, status)
+	}
+	return nil
+}
+
+// --- show ---
+
+func cmdShow(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("请指定包名或仓库，如: ghdeb show bat")
+	}
+
+	arg := args[0]
+	cat, _ := catalog.Load()
+
+	// 尝试解析为 owner/repo
+	owner, repo, parseErr := gh.ParseRepo(arg)
+	var catName string
+	var catEntry *catalog.CatalogEntry
+
+	if parseErr != nil {
+		// 尝试 catalog 查找
+		if cat != nil {
+			catEntry = cat.Lookup(arg)
+			if catEntry != nil {
+				owner, repo, _ = gh.ParseRepo(catEntry.Repo)
+				catName = arg
+			}
+		}
+		if catEntry == nil {
+			// 尝试 state 查找
+			st, _ := state.Load()
+			rec := st.GetByPkgName(arg)
+			if rec != nil && rec.Owner != "" && rec.Repo != "" {
+				owner = rec.Owner
+				repo = rec.Repo
+			} else {
+				return fmt.Errorf("未找到包 %s", arg)
+			}
+		}
+	}
+
+	repoKey := owner + "/" + repo
+
+	// 加载 state
+	st, _ := state.Load()
+	rec := st.Get(repoKey)
+
+	// 从 catalog 查找（如果还没找到）
+	if catEntry == nil && cat != nil {
+		// 尝试通过 repo 反查
+		for name, entry := range cat.AllEntries() {
+			if entry.Repo == repoKey {
+				catEntry = entry
+				catName = name
+				break
+			}
+		}
+	}
+
+	// 显示信息
+	fmt.Println(strings.Repeat("─", 50))
+	if catName != "" {
+		fmt.Printf(T("短名称:   %s\n", "Short name:  %s\n"), catName)
+	}
+	fmt.Printf(T("仓库:     %s\n", "Repo:        %s\n"), repoKey)
+	if catEntry != nil {
+		if catEntry.PrettyName != "" {
+			fmt.Printf(T("显示名:   %s\n", "Pretty name: %s\n"), catEntry.PrettyName)
+		}
+		if catEntry.Website != "" {
+			fmt.Printf(T("网站:     %s\n", "Website:     %s\n"), catEntry.Website)
+		}
+		if catEntry.Summary != "" {
+			fmt.Printf(T("简介:     %s\n", "Summary:     %s\n"), catEntry.Summary)
+		}
+	}
+
+	// 安装状态
+	if rec != nil {
+		fmt.Println(strings.Repeat("─", 50))
+		if rec.Removed {
+			fmt.Printf(T("状态:     ❌ 已移除\n", "Status:      ❌ removed\n"))
+		} else {
+			fmt.Printf(T("状态:     ✅ 已管理\n", "Status:      ✅ managed\n"))
+		}
+		fmt.Printf(T("记录版本: %s\n", "Recorded:    %s\n"), rec.CurrentVersion)
+		rec.RefreshSystemInfo(rec.PkgName)
+		if rec.SystemVersion != "" {
+			fmt.Printf(T("系统版本: %s\n", "System:      %s\n"), rec.SystemVersion)
+		}
+		if rec.Arch != "" {
+			fmt.Printf(T("架构:     %s\n", "Arch:        %s\n"), rec.Arch)
+		}
+		if rec.PkgName != "" {
+			fmt.Printf(T("deb 包名: %s\n", "Deb name:    %s\n"), rec.PkgName)
+		}
+	}
+
+	// GitHub release 信息
+	fmt.Println(strings.Repeat("─", 50))
+	client := gh.NewClient()
+	release, relErr := client.GetLatestRelease(owner, repo)
+	if relErr == nil {
+		fmt.Printf(T("最新版本: %s\n", "Latest:      %s\n"), release.TagName)
+		if release.HTMLURL != "" {
+			fmt.Printf("Release:     %s\n", release.HTMLURL)
+		}
+		arch, _ := deb.DetectArch()
+		if arch != nil {
+			result, findErr := gh.FindAssetWithFallback(release, arch)
+			if result != nil && result.Asset != nil {
+				fmt.Printf(T("匹配文件: %s (%s)\n", "Match:       %s (%s)\n"), result.Asset.Name, formatSize(result.Asset.Size))
+			} else if findErr != nil {
+				fmt.Printf(T("匹配文件: ⚠️ %v\n", "Match:       ⚠️ %v\n"), findErr)
+			}
+		}
+	} else {
+		fmt.Printf(T("最新版本: ⚠️ 获取失败: %v\n", "Latest:      ⚠️ failed: %v\n"), relErr)
+	}
+
+	fmt.Println(strings.Repeat("─", 50))
+	return nil
+}
+
+// --- clean ---
+
+func cmdClean(args []string) error {
+	dryRun := false
+	for _, a := range args {
+		if a == "--dry-run" || a == "-n" {
+			dryRun = true
+		}
+	}
+
+	cacheDir, err := getCacheDir()
+	if err != nil {
+		return err
+	}
+
+	entries, err := os.ReadDir(cacheDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			fmt.Println(T("缓存目录不存在，无需清理", "Cache directory does not exist, nothing to clean"))
+			return nil
+		}
+		return err
+	}
+
+	var totalSize int64
+	var files []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		if strings.HasSuffix(e.Name(), ".deb") || strings.HasSuffix(e.Name(), ".json_extract") {
+			info, err := e.Info()
+			if err != nil {
+				continue
+			}
+			files = append(files, e.Name())
+			totalSize += info.Size()
+		}
+	}
+
+	if len(files) == 0 {
+		fmt.Println(T("缓存为空，无需清理", "Cache is empty, nothing to clean"))
+		return nil
+	}
+
+	if dryRun {
+		fmt.Printf(T("将清理 %d 个文件，释放 %s:\n", "Would clean %d files, freeing %s:\n"), len(files), formatSize(totalSize))
+		for _, f := range files {
+			fmt.Printf("  %s\n", f)
+		}
+		return nil
+	}
+
+	removed := 0
+	for _, f := range files {
+		path := filepath.Join(cacheDir, f)
+		if err := os.Remove(path); err != nil {
+			fmt.Fprintf(os.Stderr, "⚠️  删除失败 %s: %v\n", f, err)
+		} else {
+			removed++
+		}
+	}
+
+	fmt.Printf(T("✅ 已清理 %d 个文件，释放 %s\n", "✅ Cleaned %d files, freed %s\n"), removed, formatSize(totalSize))
+	return nil
+}
+
+// --- purge ---
+
+func cmdPurge(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("请指定包名，如: ghdeb purge bat")
+	}
+
+	owner, repo, err := resolvePkgArg(args[0])
+	if err != nil {
+		return err
+	}
+	repoKey := owner + "/" + repo
+
+	st, err := state.Load()
+	if err != nil {
+		return err
+	}
+	rec := st.Get(repoKey)
+	if rec == nil {
+		return fmt.Errorf("未找到 %s 的管理记录", repoKey)
+	}
+
+	// 获取 deb 包名
+	pkgName := rec.PkgName
+	if pkgName == "" {
+		pkgName = repo
+	}
+
+	// 检查是否已安装
+	if !deb.IsPackageInstalled(pkgName) {
+		fmt.Printf(T("⚠️  %s 未安装在系统上\n", "⚠️  %s is not installed on system\n"), pkgName)
+	} else {
+		// 执行 apt-get purge
+		fmt.Printf(T("🗑️  卸载 %s (apt-get purge)...\n", "🗑️  Purging %s (apt-get purge)...\n"), pkgName)
+		cmd := exec.Command("sudo", "env", "DEBIAN_FRONTEND=noninteractive", "apt-get", "purge", "-y", pkgName)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("purge 失败: %w", err)
+		}
+
+		// autoremove
+		fmt.Printf(T("🧹 清理依赖 (apt-get autoremove)...\n", "🧹 Cleaning dependencies (apt-get autoremove)...\n"))
+		autoCmd := exec.Command("sudo", "env", "DEBIAN_FRONTEND=noninteractive", "apt-get", "autoremove", "-y")
+		autoCmd.Stdout = os.Stdout
+		autoCmd.Stderr = os.Stderr
+		_ = autoCmd.Run() // autoremove 失败不阻塞
+	}
+
+	// 标记移除
+	st.MarkRemoved(repoKey)
+	if err := st.Save(); err != nil {
+		return fmt.Errorf("保存状态失败: %w", err)
+	}
+
+	fmt.Printf(T("✅ 已卸载并清除 %s\n", "✅ Purged %s\n"), repoKey)
 	return nil
 }
 
@@ -404,7 +806,6 @@ func cmdScan(args []string) error {
 		return err
 	}
 
-	// 解析参数
 	deepScan := false
 	for _, arg := range args {
 		if arg == "--deep" {
@@ -433,7 +834,6 @@ func cmdScan(args []string) error {
 		return nil
 	}
 
-	// 显示发现的包
 	fmt.Printf(T("\n发现 %d 个孤立包:\n", "\nFound %d orphan packages:\n"), len(pkgs))
 	fmt.Printf("%-20s %-30s %-12s %-10s %s\n", T("包名", "Package"), T("仓库", "Repo"), T("版本", "Version"), T("状态", "Status"), "Homepage")
 	fmt.Println(strings.Repeat("-", 100))
@@ -471,7 +871,6 @@ func cmdScan(args []string) error {
 		}
 	}
 
-	// 询问是否纳入管理
 	if newCount > 0 {
 		fmt.Printf(T("\n📦 其中 %d 个尚未管理\n", "\n📦 %d of them are unmanaged\n"), newCount)
 		fmt.Print(T("是否纳入 ghdeb 管理？[y/N] ", "Add them to ghdeb management? [y/N] "))
@@ -492,7 +891,6 @@ func cmdScan(args []string) error {
 // --- list ---
 
 func cmdList(args []string) error {
-	// 检查是否强制刷新缓存
 	refresh := false
 	for _, a := range args {
 		if a == "--refresh" || a == "-r" {
@@ -516,12 +914,10 @@ func cmdList(args []string) error {
 
 	client := gh.NewClient()
 
-	// 强制刷新时清除全部缓存
 	if refresh {
 		gh.InvalidateCache("", "")
 	}
 
-	// 按包名排序
 	sort.Slice(records, func(i, j int) bool {
 		return records[i].PkgName < records[j].PkgName
 	})
@@ -539,19 +935,15 @@ func cmdList(args []string) error {
 			sysVer = "-"
 		}
 
-		// 获取最新版本：优先读缓存，缓存未命中才请求 API
 		latestVer := "-"
 		if !r.Removed && r.Owner != "" && r.Repo != "" {
-			// 先查缓存
 			cached := client.GetCachedRelease(r.Owner, r.Repo)
 			if cached != "" {
 				latestVer = cached
 			} else {
-				// 缓存未命中，请求 API
 				release, apiErr := client.GetLatestRelease(r.Owner, r.Repo)
 				if apiErr == nil {
 					latestVer = release.TagName
-					// 写入缓存
 					client.SetCachedRelease(r.Owner, r.Repo, release.TagName)
 				}
 			}
@@ -565,7 +957,6 @@ func cmdList(args []string) error {
 			updatedAt = formatTime(updatedAt)
 		}
 
-		// 拼接包名:仓库
 		var repoPart string
 		if r.Owner != "" && r.Repo != "" {
 			repoPart = r.Owner + "/" + r.Repo
@@ -598,7 +989,15 @@ func cmdHistory(args []string) error {
 	}
 	rec := st.Get(args[0])
 	if rec == nil {
-		return fmt.Errorf("未找到 %s 的记录", args[0])
+		// 尝试短名称
+		owner, repo, resolveErr := resolvePkgArg(args[0])
+		if resolveErr != nil {
+			return fmt.Errorf("未找到 %s 的记录", args[0])
+		}
+		rec = st.Get(owner + "/" + repo)
+		if rec == nil {
+			return fmt.Errorf("未找到 %s 的记录", args[0])
+		}
 	}
 
 	fmt.Printf("仓库: %s/%s\n", rec.Owner, rec.Repo)
@@ -608,7 +1007,7 @@ func cmdHistory(args []string) error {
 		fmt.Printf("状态: ❌ 已移除\n")
 	}
 
-	rec.RefreshSystemInfo(rec.Repo)
+	rec.RefreshSystemInfo(rec.PkgName)
 	if rec.SystemVersion != "" {
 		fmt.Printf("系统版本: %s\n", rec.SystemVersion)
 	}
@@ -625,11 +1024,15 @@ func cmdHistory(args []string) error {
 		}
 		switch e.Action {
 		case state.ActionInstall:
-			fmt.Printf("  %d. [%s] INSTALL  %s\n", i+1, ts, e.Version)
+			if e.Reinstall {
+				fmt.Printf("  %d. [%s] REINSTALL %s\n", i+1, ts, e.Version)
+			} else {
+				fmt.Printf("  %d. [%s] INSTALL   %s\n", i+1, ts, e.Version)
+			}
 		case state.ActionUpgrade:
-			fmt.Printf("  %d. [%s] UPGRADE  %s → %s\n", i+1, ts, e.FromVersion, e.Version)
+			fmt.Printf("  %d. [%s] UPGRADE   %s → %s\n", i+1, ts, e.FromVersion, e.Version)
 		case state.ActionRemove:
-			fmt.Printf("  %d. [%s] REMOVE   (was %s)\n", i+1, ts, e.Version)
+			fmt.Printf("  %d. [%s] REMOVE    (was %s)\n", i+1, ts, e.Version)
 		}
 		if e.DebFile != "" {
 			fmt.Printf("     文件: %s\n", e.DebFile)
@@ -648,13 +1051,19 @@ func cmdHistory(args []string) error {
 
 func cmdRemove(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("请指定仓库，如: ghdeb remove LeisureLinux/ghdeb")
+		return fmt.Errorf("请指定包名，如: ghdeb remove bat")
 	}
+
+	owner, repo, err := resolvePkgArg(args[0])
+	if err != nil {
+		return err
+	}
+	repoKey := owner + "/" + repo
+
 	st, err := state.Load()
 	if err != nil {
 		return err
 	}
-	repoKey := args[0]
 	if st.Get(repoKey) == nil {
 		return fmt.Errorf("未找到 %s 的安装记录", repoKey)
 	}
@@ -662,7 +1071,7 @@ func cmdRemove(args []string) error {
 	if err := st.Save(); err != nil {
 		return err
 	}
-	fmt.Printf("✅ 已标记移除 %s（历史记录已保留，软件本身未被卸载）\n", repoKey)
+	fmt.Printf(T("✅ 已标记移除 %s（历史记录已保留，软件本身未被卸载）\n", "✅ Marked %s as removed (history preserved, software not uninstalled)\n"), repoKey)
 	return nil
 }
 
@@ -711,71 +1120,6 @@ func cmdTestHomepage(args []string) error {
 	return nil
 }
 
-// --- info ---
-
-func cmdInfo(args []string) error {
-	if len(args) == 0 {
-		return fmt.Errorf(T("请指定包名或仓库，如: ghdeb info ghdeb 或 ghdeb info LeisureLinux/ghdeb", "Please specify a package name or repo, e.g.: ghdeb info ghdeb or ghdeb info LeisureLinux/ghdeb"))
-	}
-	
-	var owner, repo string
-	var err error
-	
-	// 先尝试解析为 owner/repo
-	owner, repo, err = gh.ParseRepo(args[0])
-	if err != nil {
-		// 解析失败，尝试作为包名查找 state
-		st, loadErr := state.Load()
-		if loadErr != nil {
-			return fmt.Errorf(T("无法解析 %s 且加载状态失败: %w", "Cannot parse %s and failed to load state: %w"), args[0], loadErr)
-		}
-		rec := st.GetByPkgName(args[0])
-		if rec != nil && rec.Owner != "" && rec.Repo != "" {
-			owner = rec.Owner
-			repo = rec.Repo
-		} else {
-			return fmt.Errorf(T("未找到包 %s，请使用 owner/repo 格式或确保该包已被管理", "Package %s not found, please use owner/repo format or ensure the package is managed"), args[0])
-		}
-	}
-	client := gh.NewClient()
-	release, err := client.GetLatestRelease(owner, repo)
-	if err != nil {
-		return err
-	}
-	arch, _ := deb.DetectArch()
-
-	result, findErr := gh.FindAssetWithFallback(release, arch)
-
-	fmt.Printf(T("仓库: %s/%s\n", "Repo: %s/%s\n"), owner, repo)
-	fmt.Printf(T("最新版本: %s\n", "Latest version: %s\n"), release.TagName)
-	if release.Name != "" && release.Name != release.TagName {
-		fmt.Printf(T("名称: %s\n", "Name: %s\n"), release.Name)
-	}
-	if release.HTMLURL != "" {
-		fmt.Printf("Release: %s\n", release.HTMLURL)
-	}
-
-	if result != nil && result.Asset != nil {
-		fmt.Printf(T("\n✅ 匹配当前架构 %s 的 .deb 文件:\n", "\n✅ Matched .deb file for arch %s:\n"), arch.DpkgArch)
-		fmt.Printf("  → %s (%s)\n", result.Asset.Name, formatSize(result.Asset.Size))
-	} else {
-		fmt.Printf(T("\n⚠️  没有匹配当前架构 %s 的 .deb 文件\n", "\n⚠️  No .deb file matched for arch %s\n"), arch.DpkgArch)
-		if findErr != nil {
-			fmt.Printf("   %v\n", findErr)
-		}
-	}
-
-	if result != nil && len(result.Fallbacks) > 0 {
-		fmt.Printf(T("\n📦 其他可用的安装包（需手动下载安装）:\n", "\n📦 Other available packages (manual download required):\n"))
-		for _, a := range result.Fallbacks {
-			fmt.Printf("  %s (%s)\n", a.Name, formatSize(a.Size))
-			fmt.Printf("    %s\n", a.BrowserDownloadURL)
-		}
-	}
-
-	return nil
-}
-
 // --- 辅助函数 ---
 
 func parseRepoSpec(s string) (repo, tag string) {
@@ -818,14 +1162,13 @@ func installDeb(path string) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
-		// 检查是否需要交互式配置
 		errMsg := err.Error()
 		if strings.Contains(errMsg, "debconf") || strings.Contains(errMsg, "configuration") {
 			fmt.Printf(T("\n⚠️  此包需要交互式配置，请手动运行:\n", "\n⚠️  This package requires interactive configuration, please run manually:\n"))
 			fmt.Printf("  sudo dpkg -i %s\n\n", path)
 			return fmt.Errorf(T("需要交互式配置", "requires interactive configuration"))
 		}
-		
+
 		fmt.Printf(T("🔧 尝试修复依赖 (apt-get install -f)...\n", "🔧 Trying to fix dependencies (apt-get install -f)...\n"))
 		fixCmd := exec.Command("sudo", "env", "DEBIAN_FRONTEND=noninteractive", "apt-get", "install", "-f", "-y")
 		fixCmd.Stdout = os.Stdout
@@ -887,7 +1230,6 @@ func formatTime(s string) string {
 	}
 	return t.Format("2006-01-02 15:04:05")
 }
-
 
 func truncate(s string, maxLen int) string {
 	if len(s) <= maxLen {

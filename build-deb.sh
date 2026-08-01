@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-VERSION="0.3.17"
+VERSION="0.4.0"
 
 # 支持的架构映射: go arch -> dpkg arch
 declare -A ARCH_MAP=(
@@ -41,6 +41,8 @@ mkdir -p ${PKG_DIR}/usr/share/man/man1
 mkdir -p ${PKG_DIR}/usr/share/man/zh_CN/man1
 mkdir -p ${PKG_DIR}/usr/share/bash-completion/completions
 mkdir -p ${PKG_DIR}/usr/share/zsh/site-functions
+mkdir -p ${PKG_DIR}/usr/share/fish/vendor_completions.d
+mkdir -p ${PKG_DIR}/usr/share/ghdeb
 
 # 复制二进制
 cp dist/ghdeb ${PKG_DIR}/usr/bin/ghdeb
@@ -61,6 +63,14 @@ chmod 644 ${PKG_DIR}/usr/share/bash-completion/completions/ghdeb
 # zsh 补全
 cp completion/ghdeb.zsh ${PKG_DIR}/usr/share/zsh/site-functions/_ghdeb
 chmod 644 ${PKG_DIR}/usr/share/zsh/site-functions/_ghdeb
+
+# fish 补全
+cp completion/ghdeb.fish ${PKG_DIR}/usr/share/fish/vendor_completions.d/_ghdeb
+chmod 644 ${PKG_DIR}/usr/share/fish/vendor_completions.d/_ghdeb
+
+# 包目录 (catalog.toml)
+cp catalog/catalog.toml ${PKG_DIR}/usr/share/ghdeb/catalog.toml
+chmod 644 ${PKG_DIR}/usr/share/ghdeb/catalog.toml
 
 # 生成控制文件（替换 Architecture 字段）
 sed "s/^Architecture:.*/Architecture: ${TARGET_ARCH}/" debian/control > ${PKG_DIR}/DEBIAN/control

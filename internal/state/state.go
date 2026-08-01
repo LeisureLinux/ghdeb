@@ -29,6 +29,7 @@ type HistoryEntry struct {
 	DebFile     string `json:"deb_file,omitempty"`     // .deb 文件名
 	DebPath     string `json:"deb_path,omitempty"`     // .deb 完整路径
 	ReleaseURL  string `json:"release_url,omitempty"`  // GitHub release URL
+	Reinstall   bool   `json:"reinstall,omitempty"`    // 是否为重装操作
 	Timestamp   string `json:"timestamp"`              // 操作时间 RFC3339
 }
 
