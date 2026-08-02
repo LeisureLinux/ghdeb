@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -78,6 +79,12 @@ func getGhCliToken() string {
 func newTransport() *http.Transport {
 	return &http.Transport{
 		Proxy: getProxyFunc(), // 统一代理：环境变量 + 配置文件
+		// TCP 拨号超时：弱代理建连本身就可能极慢或挂起，必须设上限。
+		// 否则 Transport 的 DialContext 默认无超时，会无限期卡在 connect。
+		DialContext: (&net.Dialer{
+			Timeout:   30 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
 		// 仅设置连接/响应头超时，不设全局超时，避免大文件被固定超时卡死。
 		// 慢代理（如 wpad.lan:8888）首次建连可达 8~15s，超时值需放宽避免误杀。
 		ResponseHeaderTimeout: 60 * time.Second,
@@ -158,7 +165,7 @@ func (c *Client) GetLatestRelease(owner, repo string) (*Release, error) {
 			return &r, nil
 		}
 	}
-	return nil, fmt.Errorf(
+	return nil, fmt.Errorf("%s",
 		i18n.T("未找到稳定版本（所有 release 均为 draft 或 prerelease）",
 			"no stable version found (all releases are draft or prerelease)"))
 }
@@ -263,7 +270,7 @@ func (c *Client) downloadOnce(asset Asset, destPath string, progress func(downlo
 	if resp.StatusCode == 416 {
 		// 删除本地文件，重新下载
 		os.Remove(destPath)
-		return fmt.Errorf(
+		return fmt.Errorf("%s",
 			i18n.T("断点续传失败，重新下载", "range not satisfiable, restarting download"))
 	}
 	if resp.StatusCode != 200 && resp.StatusCode != 206 {
