@@ -98,7 +98,7 @@ func printUsage() {
   ghdeb upgrade [pkg]                   升级包（不指定则升级所有）
   ghdeb reinstall <pkg>                 重新安装指定包
   ghdeb search <pattern>                在包目录中搜索
-  ghdeb list [--refresh]                列出所有已管理的包
+  ghdeb list [--json]                 列出所有已管理的包(纯本地)
   ghdeb catalog init                    一次性建立目录（扫描已装包的 GitHub Homepage，不校验 .deb）
   ghdeb catalog list                    列出包目录中所有条目
   ghdeb catalog show <name>             显示目录条目详情
@@ -139,7 +139,7 @@ Usage:
   ghdeb upgrade [pkg]                   Upgrade packages (all if unspecified)
   ghdeb reinstall <pkg>                 Reinstall a package
   ghdeb search <pattern>                Search in package catalog
-  ghdeb list [--refresh]                List managed packages
+  ghdeb list [--json]                  List managed packages (local only)
   ghdeb catalog init                    Build catalog once (scan installed GitHub Homepages, no .deb check)
   ghdeb catalog list                    List all catalog entries
   ghdeb catalog show <name>             Show catalog entry details
@@ -1677,18 +1677,14 @@ func compareVersion(a, b string) int {
 // --- list ---
 
 func cmdList(args []string) error {
-	refresh := false
 	jsonOutput := false
 	for _, a := range args {
-		if a == "--refresh" || a == "-r" {
-			refresh = true
-		}
 		if a == "--json" {
 			jsonOutput = true
 		}
 	}
 
-	// 加载 catalog
+	// 加载 catalog（纯本地，不访问 GitHub）
 	cat, err := catalog.Load()
 	if err != nil {
 		return fmt.Errorf("加载目录失败: %w", err)
@@ -1700,17 +1696,12 @@ func cmdList(args []string) error {
 		return err
 	}
 
-	client := gh.NewClient()
-	if refresh {
-		gh.InvalidateCache("", "")
-	}
-
 	// JSON 输出结构
 	type listPkg struct {
-		Name         string `json:"name"`
-		Repo         string `json:"repo"`
+		Name        string `json:"name"`
+		Repo        string `json:"repo"`
 		InstalledVer string `json:"installed_version,omitempty"`
-		LatestVer    string `json:"latest_version,omitempty"`
+		RecordedVer  string `json:"recorded_version,omitempty"`
 		Status       string `json:"status"`
 	}
 	var jsonPkgs []listPkg
@@ -1721,15 +1712,14 @@ func cmdList(args []string) error {
 			padRight(T("包名", "Name"), 20),
 			padRight(T("仓库", "Repo"), 25),
 			padRight(T("已装版本", "Installed"), 12),
-			padRight(T("最新版本", "Latest"), 12),
+			padRight(T("记录版本", "Recorded"), 12),
 			T("状态", "Status"))
 		fmt.Println(strings.Repeat("-", 90))
 	}
 
-	// 遍历 catalog 所有条目
+	// 遍历 catalog 所有条目（纯本地展示，不实时查询 GitHub）
 	names := cat.SortedNames()
 	installedCount := 0
-	upgradableCount := 0
 
 	for _, name := range names {
 		entry := cat.Packages[name]
@@ -1750,46 +1740,29 @@ func cmdList(args []string) error {
 			continue
 		}
 
-		// 获取最新版本
-		latestVer := "-"
-		if repo != "" {
-			parts := strings.SplitN(repo, "/", 2)
-			if len(parts) == 2 {
-				cached := client.GetCachedRelease(parts[0], parts[1])
-				if cached != "" {
-					latestVer = cached
-				} else {
-					rel, apiErr := client.GetLatestRelease(parts[0], parts[1])
-					if apiErr == nil {
-						latestVer = rel.TagName
-						client.SetCachedRelease(parts[0], parts[1], rel.TagName)
-					}
-				}
-			}
+		// 记录版本取自本地 state（ghdeb 最后一次 install/upgrade 的版本）
+		recordedVer := "-"
+		if rec.CurrentVersion != "" {
+			recordedVer = rec.CurrentVersion
 		}
 
 		installedVer := sysVer
 		installedCount++
 
-		// 状态：安装版本 < GitHub 最新版本 → 可升级；否则（>=）→ 正常
-		status := "✅ " + T("正常", "ok")
-		if latestVer != "-" && compareVersion(sysVer, latestVer) < 0 {
-			status = "🔄 " + T("可升级", "upgradable")
-			upgradableCount++
-		}
+		// 纯本地状态：已管理即显示正常
+		status := "✅ " + T("已管理", "managed")
 
 		if jsonOutput {
-			pkg := listPkg{Name: name, Repo: repo, Status: status, InstalledVer: installedVer}
-			if latestVer != "-" {
-				pkg.LatestVer = latestVer
-			}
-			jsonPkgs = append(jsonPkgs, pkg)
+			jsonPkgs = append(jsonPkgs, listPkg{
+				Name: name, Repo: repo, Status: status,
+				InstalledVer: installedVer, RecordedVer: recordedVer,
+			})
 		} else {
 			fmt.Printf("%s %s %s %s %s\n",
 				padRight(name, 20),
 				padRight(truncate(repo, 23), 25),
 				padRight(installedVer, 12),
-				padRight(latestVer, 12),
+				padRight(recordedVer, 12),
 				status)
 		}
 	}
@@ -1799,7 +1772,7 @@ func cmdList(args []string) error {
 		fmt.Println(string(jsonData))
 	} else {
 		fmt.Println(strings.Repeat("-", 90))
-		fmt.Printf(T("共 %d 个已装包，%d 个可升级", "Total %d installed packages, %d upgradable"), installedCount, upgradableCount)
+		fmt.Printf(T("共 %d 个已装包", "Total %d installed packages"), installedCount)
 		fmt.Println()
 	}
 
