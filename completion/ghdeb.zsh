@@ -94,7 +94,7 @@ _ghdeb() {
                 catalog)
                     if (( CURRENT == 2 )); then
                         local -a subcmds
-                        subcmds=('list:List all entries' 'show:Show entry details' 'search:Search catalog' 'add:Add entry' 'delete:Delete entry')
+                        subcmds=('list:List all entries' 'show:Show entry details' 'search:Search catalog' 'add:Add entry' 'delete:Delete entry' 'cleanup:Clean up duplicates')
                         _describe -t subcmds 'catalog subcommand' subcmds
                     else
                         case $words[2] in

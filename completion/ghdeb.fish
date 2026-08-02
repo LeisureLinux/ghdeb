@@ -63,7 +63,7 @@ complete -c ghdeb -f -n "__fish_seen_subcommand_from clean" \
 
 # catalog: 子命令补全
 complete -c ghdeb -f -n "__fish_seen_subcommand_from catalog; and not __fish_seen_subcommand_from list show search add delete" \
-    -a "list show search add delete"
+    -a "list show search add delete cleanup"
 
 # catalog show/delete: 补全 catalog 包名
 complete -c ghdeb -f -n "__fish_seen_subcommand_from catalog; and __fish_seen_subcommand_from show delete" \

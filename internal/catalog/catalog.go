@@ -319,3 +319,23 @@ func FormatEntry(name string, entry *CatalogEntry) string {
 func (e *CatalogEntry) IsDirectURL() bool {
 	return e.URL != "" && e.Repo == ""
 }
+
+// LoadSystemCatalog 加载系统目录
+func LoadSystemCatalog() (*Catalog, error) {
+	cat := &Catalog{Packages: make(map[string]*CatalogEntry)}
+	if err := cat.loadFile(SystemCatalogPath()); err != nil {
+		return nil, err
+	}
+	return cat, nil
+}
+
+// SaveUserCatalog 保存用户目录
+func (c *Catalog) SaveUserCatalog() error {
+	userPath := UserCatalogPath()
+	// 将 map[string]*CatalogEntry 转换为 map[string]CatalogEntry
+	entries := make(map[string]CatalogEntry)
+	for name, entry := range c.Packages {
+		entries[name] = *entry
+	}
+	return writeUserCatalog(userPath, entries)
+}

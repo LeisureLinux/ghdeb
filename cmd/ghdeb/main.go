@@ -17,7 +17,7 @@ import (
 	"github.com/leisurelinux/ghdeb/internal/state"
 )
 
-const version = "0.6.3"
+const version = "0.6.4"
 
 func main() {
 	fmt.Printf(T("ghdeb v%s - 管理从 GitHub Releases 下载的 .deb 包 © LeisureLinux\n", "ghdeb v%s - manage .deb packages downloaded from GitHub Releases © LeisureLinux\n"), version)
@@ -93,6 +93,7 @@ func printUsage() {
   ghdeb catalog show <name>             显示目录条目详情
   ghdeb catalog add <name> --repo <owner/repo>  添加条目到用户目录
   ghdeb catalog delete <name>           从用户目录删除条目
+  ghdeb catalog cleanup                 清理用户目录中与系统目录重复的条目
   ghdeb show <pkg>                      显示包的完整信息
   ghdeb history <pkg>                   查看某包的完整操作历史
   ghdeb remove <pkg>                    标记移除（保留历史记录，不卸载）
@@ -134,6 +135,7 @@ Usage:
   ghdeb catalog show <name>             Show catalog entry details
   ghdeb catalog add <name> --repo <owner/repo>  Add entry to user catalog
   ghdeb catalog delete <name>           Remove entry from user catalog
+  ghdeb catalog cleanup                 Clean up duplicate entries from user catalog
   ghdeb show <pkg>                      Show package details
   ghdeb history <pkg>                   View operation history
   ghdeb remove <pkg>                    Mark as removed (keep history)
@@ -706,6 +708,70 @@ func cmdShow(args []string) error {
 	return nil
 }
 
+
+
+// cmdCatalogCleanup 清理用户目录中和系统目录重复的条目
+func cmdCatalogCleanup(args []string) error {
+	// 加载系统目录
+	sysCat, err := catalog.LoadSystemCatalog()
+	if err != nil {
+		return fmt.Errorf("加载系统目录失败: %w", err)
+	}
+
+	// 加载用户目录
+	userEntries, err := catalog.LoadUserCatalog()
+	if err != nil {
+		return fmt.Errorf("加载用户目录失败: %w", err)
+	}
+
+	if len(userEntries) == 0 {
+		fmt.Println("用户目录为空，无需清理")
+		return nil
+	}
+
+	// 找出重复的条目
+	var duplicates []string
+	for name, userEntry := range userEntries {
+		if sysEntry, exists := sysCat.Packages[name]; exists {
+			// 比较是否完全相同
+			if userEntry.Repo == sysEntry.Repo &&
+				userEntry.PrettyName == sysEntry.PrettyName &&
+				userEntry.Website == sysEntry.Website &&
+				userEntry.Summary == sysEntry.Summary {
+				duplicates = append(duplicates, name)
+			}
+		}
+	}
+
+	if len(duplicates) == 0 {
+		fmt.Println("没有发现重复的条目")
+		return nil
+	}
+
+	fmt.Printf("发现 %d 个重复的条目：\n", len(duplicates))
+	sort.Strings(duplicates)
+	for _, name := range duplicates {
+		fmt.Printf("  - %s\n", name)
+	}
+
+	// 删除重复条目
+	for _, name := range duplicates {
+		delete(userEntries, name)
+	}
+
+	// 保存用户目录
+	userCat := &catalog.Catalog{Packages: make(map[string]*catalog.CatalogEntry)}
+	for name, entry := range userEntries {
+		e := entry
+		userCat.Packages[name] = &e
+	}
+	if err := userCat.SaveUserCatalog(); err != nil {
+		return fmt.Errorf("保存用户目录失败: %w", err)
+	}
+
+	fmt.Printf("\n已清理 %d 个重复条目\n", len(duplicates))
+	return nil
+}
 // --- catalog ---
 
 func cmdCatalog(args []string) error {
@@ -727,8 +793,10 @@ func cmdCatalog(args []string) error {
 		return cmdCatalogAdd(subargs)
 	case "delete", "del", "rm":
 		return cmdCatalogDelete(subargs)
+	case "cleanup":
+		return cmdCatalogCleanup(subargs)
 	default:
-		return fmt.Errorf("未知子命令: %s（可用: list, show, search, add, delete）", subcmd)
+		return fmt.Errorf("未知子命令: %s（可用: list, show, search, add, delete, cleanup）", subcmd)
 	}
 }
 
@@ -1547,3 +1615,4 @@ func padRight(s string, width int) string {
 
 
 var _ = syscall.Geteuid
+

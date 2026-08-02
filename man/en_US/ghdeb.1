@@ -111,6 +111,9 @@ option specifies a URL to a GPG public key for signature verification.
 .B ghdeb catalog delete
 .I name
 Remove an entry from the user catalog.
+.TP
+.B ghdeb catalog cleanup
+Remove entries from the user catalog that are identical to entries in the system catalog. This helps keep the user catalog clean and avoids unnecessary duplication.
 .RE
 .SS show / info
 .B ghdeb show
