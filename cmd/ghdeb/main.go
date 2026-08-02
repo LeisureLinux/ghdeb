@@ -20,7 +20,7 @@ import (
 	"github.com/leisurelinux/ghdeb/internal/state"
 )
 
-const version = "0.7.10"
+const version = "0.7.11"
 
 func main() {
 	// 检查是否使用 --json，如果是则不打印 banner
@@ -1799,7 +1799,7 @@ func downloadAsset(client *gh.Client, asset gh.Asset) (string, error) {
 
 func installDeb(path string) error {
 	fmt.Printf(T("📦 安装中 (dpkg -i)...\n", "📦 Installing (dpkg -i)...\n"))
-	cmd := exec.Command("sudo", "env", "DEBIAN_FRONTEND=noninteractive", "dpkg", "-i", path)
+	cmd := exec.Command("sudo", "env", "DEBIAN_FRONTEND=noninteractive", "dpkg", "--force-confold", "-i", path)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
@@ -1811,7 +1811,7 @@ func installDeb(path string) error {
 		}
 
 		fmt.Printf(T("🔧 尝试修复依赖 (apt-get install -f)...\n", "🔧 Trying to fix dependencies (apt-get install -f)...\n"))
-		fixCmd := exec.Command("sudo", "env", "DEBIAN_FRONTEND=noninteractive", "apt-get", "install", "-f", "-y")
+		fixCmd := exec.Command("sudo", "env", "DEBIAN_FRONTEND=noninteractive", "apt-get", "-o", "Dpkg::Options::=--force-confold", "install", "-f", "-y")
 		fixCmd.Stdout = os.Stdout
 		fixCmd.Stderr = os.Stderr
 		if fixErr := fixCmd.Run(); fixErr != nil {
