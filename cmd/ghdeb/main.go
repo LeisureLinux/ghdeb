@@ -17,7 +17,7 @@ import (
 	"github.com/leisurelinux/ghdeb/internal/state"
 )
 
-const version = "0.6.0"
+const version = "0.6.1"
 
 func main() {
 	fmt.Printf(T("ghdeb v%s - 管理从 GitHub Releases 下载的 .deb 包 © LeisureLinux\n", "ghdeb v%s - manage .deb packages downloaded from GitHub Releases © LeisureLinux\n"), version)
@@ -1348,8 +1348,8 @@ func downloadAsset(client *gh.Client, asset gh.Asset) (string, error) {
 		return "", err
 	}
 	destPath := filepath.Join(cacheDir, asset.Name)
-	fmt.Printf(T("⬇️  下载中: %s\n", "⬇️  Downloading: %s\n"), asset.BrowserDownloadURL)
-	err = client.DownloadAsset(asset, destPath, func(downloaded, total int64) {
+	fmt.Printf(T("⬇️  多线程下载中 (%d 线程): %s\n", "⬇️  Parallel downloading (%d threads): %s\n"), 4, asset.BrowserDownloadURL)
+	err = client.DownloadAssetWithFallback(asset, destPath, func(downloaded, total int64) {
 		printProgress(downloaded, total)
 	})
 	fmt.Println()
