@@ -160,12 +160,6 @@ pretty_name = "zellij"
 website = "https://zellij.dev"
 summary = "A terminal workspace with batteries included"
 
-[alacritty]
-repo = "alacritty/alacritty"
-pretty_name = "Alacritty"
-website = "https://alacritty.org"
-summary = "A cross-platform, OpenGL terminal emulator"
-
 [wezterm]
 repo = "wezterm/wezterm"
 pretty_name = "WezTerm"
@@ -173,18 +167,6 @@ website = "https://wezfurlong.org/wezterm"
 summary = "A GPU-accelerated cross-platform terminal emulator and multiplexer"
 
 # === 容器 / DevOps ===
-
-[nerdctl]
-repo = "containerd/nerdctl"
-pretty_name = "nerdctl"
-website = "https://github.com/containerd/nerdctl"
-summary = "contaiNERD CTL - Docker-compatible CLI for containerd"
-
-[podman]
-repo = "containers/podman"
-pretty_name = "Podman"
-website = "https://podman.io"
-summary = "A tool for managing OCI containers and pods"
 
 # === 绘图 / 设计 ===
 
@@ -350,41 +332,11 @@ summary = "An extremely fast Python linter and code formatter"
 
 # === JS/TS 运行时 ===
 
-[deno]
-repo = "denoland/deno"
-pretty_name = "Deno"
-website = "https://deno.land"
-summary = "A modern runtime for JavaScript and TypeScript"
-
-[bun]
-repo = "oven-sh/bun"
-pretty_name = "Bun"
-website = "https://bun.sh"
-summary = "Incredibly fast JavaScript runtime, bundler, test runner, and package manager"
-
 # === 系统编程 ===
-
-[zig]
-repo = "ziglang/zig"
-pretty_name = "Zig"
-website = "https://ziglang.org"
-summary = "General-purpose programming language designed for robustness and clarity"
 
 # === 编辑器 ===
 
-[neovim]
-repo = "neovim/neovim"
-pretty_name = "Neovim"
-website = "https://neovim.io"
-summary = "Vim-fork focused on extensibility and usability"
-
 # === 系统 ===
-
-[ventoy]
-repo = "ventoy/Ventoy"
-pretty_name = "Ventoy"
-website = "https://www.ventoy.net"
-summary = "A new bootable USB solution"
 
 [balena-etcher]
 repo = "balena-io/etcher"
@@ -392,8 +344,3 @@ pretty_name = "balenaEtcher"
 website = "https://etcher.balena.io"
 summary = "Flash OS images to SD cards & USB drives, safely and easily"
 
-[cockpit]
-repo = "cockpit-project/cockpit"
-pretty_name = "Cockpit"
-website = "https://cockpit-project.org"
-summary = "Web-based graphical interface for servers"
