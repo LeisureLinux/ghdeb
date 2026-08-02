@@ -1,0 +1,21 @@
+#!/bin/bash
+set -e
+
+# ghdeb postrm - 在包被移除之后执行
+# $1 = remove / purge / abort-remove / abort-install / upgrade
+
+case "$1" in
+    purge)
+        # purge 时彻底清理数据
+        rm -rf /var/cache/ghdeb
+        rm -rf /etc/ghdeb
+        rm -rf /usr/share/ghdeb
+        ;;
+    remove)
+        # remove 时只清理 hook 和 ghdeb 安装目录，保留用户数据
+        rm -rf /usr/share/ghdeb
+        # 保留 /var/cache/ghdeb（状态数据）和 /etc/ghdeb（配置）
+        ;;
+esac
+
+exit 0

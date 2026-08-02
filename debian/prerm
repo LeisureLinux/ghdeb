@@ -1,19 +1,15 @@
 #!/bin/bash
 set -e
 
-# ghdeb prerm 脚本
-# 在包被移除之前执行（不是 purge）
+# ghdeb prerm - 在包被移除之前执行
+# 只删除 apt hook 配置，阻止后续触发
+# 不删脚本文件，让 dpkg 自己处理
 
 echo "🗑️  正在移除 ghdeb..."
 
-# 清理 dpkg hook
+# 先删 apt hook 配置，阻止后续 apt 操作触发 hook
 if [ -f /etc/apt/apt.conf.d/99ghdeb-hook ]; then
     rm -f /etc/apt/apt.conf.d/99ghdeb-hook
-fi
-
-# 清理钩子目录
-if [ -d /usr/share/ghdeb/hooks ]; then
-    rm -rf /usr/share/ghdeb/hooks
 fi
 
 echo "✅ ghdeb 已移除"

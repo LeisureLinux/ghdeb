@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-VERSION="0.7.5"
+VERSION="0.7.6"
 
 # 支持的架构映射: go arch -> dpkg arch
 declare -A ARCH_MAP=(
@@ -81,11 +81,13 @@ chmod 755 ${PKG_DIR}/usr/share/ghdeb/hooks/remove-monitor.sh
 # 生成控制文件（替换 Architecture 字段）
 sed "s/^Architecture:.*/Architecture: ${TARGET_ARCH}/" debian/control > ${PKG_DIR}/DEBIAN/control
 
-# 复制 postinst/prerm 并设置权限
+# 复制 postinst/prerm/postrm 并设置权限
 cp debian/postinst ${PKG_DIR}/DEBIAN/postinst
 chmod 755 ${PKG_DIR}/DEBIAN/postinst
 cp debian/prerm ${PKG_DIR}/DEBIAN/prerm
 chmod 755 ${PKG_DIR}/DEBIAN/prerm
+cp debian/postrm ${PKG_DIR}/DEBIAN/postrm
+chmod 755 ${PKG_DIR}/DEBIAN/postrm
 
 # 构建 .deb 包
 echo "📦 打包 .deb [${TARGET_ARCH}]..."

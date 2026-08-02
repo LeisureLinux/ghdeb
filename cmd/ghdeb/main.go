@@ -20,7 +20,7 @@ import (
 	"github.com/leisurelinux/ghdeb/internal/state"
 )
 
-const version = "0.7.5"
+const version = "0.7.6"
 
 func main() {
 	// 检查是否使用 --json，如果是则不打印 banner
