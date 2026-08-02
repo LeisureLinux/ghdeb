@@ -918,7 +918,7 @@ func cmdCatalogInit(args []string) error {
 	fmt.Println(T("🔍 扫描已装包的 GitHub Homepage，初始化 catalog ...",
 		"🔍 Scanning installed packages' GitHub Homepage to init catalog ..."))
 
-	pkgs, err := state.ScanInstalledGitHubRepos("")
+	pkgs, err := state.ScanInstalledGitHubReposQuick("")
 	if err != nil {
 		return fmt.Errorf("扫描已装包失败: %w", err)
 	}
