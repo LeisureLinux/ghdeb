@@ -4,6 +4,7 @@ package github
 import (
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -17,6 +18,10 @@ import (
 	"github.com/leisurelinux/ghdeb/internal/config"
 	"github.com/leisurelinux/ghdeb/internal/i18n"
 )
+
+// ErrNoStableRelease 表示仓库没有可用的稳定 release（均为 draft 或 prerelease）。
+// 这是"业务性"错误（仓库确实无稳定产物），区别于网络/API 临时错误。
+var ErrNoStableRelease = errors.New("no stable release")
 
 // 下载重试配置
 const (
@@ -165,7 +170,7 @@ func (c *Client) GetLatestRelease(owner, repo string) (*Release, error) {
 			return &r, nil
 		}
 	}
-	return nil, fmt.Errorf("%s",
+	return nil, fmt.Errorf("%w: %s", ErrNoStableRelease,
 		i18n.T("未找到稳定版本（所有 release 均为 draft 或 prerelease）",
 			"no stable version found (all releases are draft or prerelease)"))
 }

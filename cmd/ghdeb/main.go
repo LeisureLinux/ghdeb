@@ -1573,6 +1573,10 @@ func checkRepoDeb(owner, repo string) (bool, error) {
 	client := gh.NewClient()
 	release, relErr := client.GetLatestRelease(owner, repo)
 	if relErr != nil {
+		if errors.Is(relErr, gh.ErrNoStableRelease) {
+			// 无稳定 release（全为 draft/prerelease）→ 视为无匹配 .deb，由调用方删除该条目
+			return false, nil
+		}
 		return false, relErr
 	}
 	result, _ := gh.FindAssetWithFallback(release, arch)
