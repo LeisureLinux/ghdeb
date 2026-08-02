@@ -68,6 +68,11 @@ Manage the package catalog. The catalog maps short names to GitHub
 repositories (or direct .deb URLs) and is used for short-name installs.
 .RS
 .TP
+.B ghdeb catalog init
+Build the system catalog once: enumerate all installed packages whose
+Homepage points to a GitHub repository and write them into the system
+catalog, without checking whether a matching .deb exists.
+
 .B ghdeb catalog list
 List all catalog entries from both system and user catalogs.
 .TP

@@ -60,6 +60,10 @@ ghdeb \- 管理从 GitHub Releases 下载的 .deb 包
 用于短名称安装。
 .RS
 .TP
+.B ghdeb catalog init
+一次性建立系统目录：枚举所有已安装且 Homepage 指向 GitHub 的软件包，
+写入系统目录，不校验是否存在对应的 .deb。
+
 .B ghdeb catalog list
 列出系统和用户目录中的所有条目。
 .TP

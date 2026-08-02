@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -20,7 +21,7 @@ import (
 	"github.com/leisurelinux/ghdeb/internal/state"
 )
 
-const version = "0.7.16"
+const version = "0.7.17"
 
 func main() {
 	// 检查是否使用 --json，如果是则不打印 banner
@@ -105,6 +106,7 @@ func printUsage() {
   ghdeb scan [--deep [pkg|--all]]                   扫描系统中的 GitHub 孤立包并纳入管理
   ghdeb search <pattern>                在包目录中搜索
   ghdeb list [--refresh]                列出所有已管理的包
+  ghdeb catalog init                    一次性建立目录（扫描已装包的 GitHub Homepage，不校验 .deb）
   ghdeb catalog list                    列出包目录中所有条目
   ghdeb catalog show <name>             显示目录条目详情
   ghdeb catalog add <name> --repo <owner/repo>  添加条目到用户目录
@@ -147,6 +149,7 @@ Usage:
   ghdeb scan [--deep [pkg|--all]]                   Scan system for GitHub orphan packages
   ghdeb search <pattern>                Search in package catalog
   ghdeb list [--refresh]                List managed packages
+  ghdeb catalog init                    Build catalog once (scan installed GitHub Homepages, no .deb check)
   ghdeb catalog list                    List all catalog entries
   ghdeb catalog show <name>             Show catalog entry details
   ghdeb catalog add <name> --repo <owner/repo>  Add entry to user catalog
@@ -819,7 +822,7 @@ func cmdShow(args []string) error {
 
 func cmdCatalog(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("请指定子命令: list, show, search, add, delete")
+		return fmt.Errorf("请指定子命令: init, list, show, search, add, delete")
 	}
 
 	subcmd := args[0]
@@ -832,12 +835,14 @@ func cmdCatalog(args []string) error {
 		return cmdCatalogShow(subargs)
 	case "search":
 		return cmdSearch(subargs) // 复用 search 逻辑
+	case "init":
+		return cmdCatalogInit(subargs)
 	case "add":
 		return cmdCatalogAdd(subargs)
 	case "delete", "del", "rm":
 		return cmdCatalogDelete(subargs)
 	default:
-		return fmt.Errorf("未知子命令: %s（可用: list, show, search, add, delete）", subcmd)
+		return fmt.Errorf("未知子命令: %s（可用: init, list, show, search, add, delete）", subcmd)
 	}
 }
 
@@ -904,6 +909,87 @@ func cmdCatalogShow(args []string) error {
 	fmt.Printf("配置路径: %s\n", catalog.SystemCatalogPath())
 	fmt.Println(strings.Repeat("─", 50))
 	fmt.Print(catalog.FormatEntry(name, entry))
+	return nil
+}
+
+// cmdCatalogInit 一次性建立系统目录：枚举所有已装包中 Homepage 指向 GitHub 的仓库，
+// 全部写入 catalog.toml（不做 .deb 架构校验）。已存在的条目跳过。
+func cmdCatalogInit(args []string) error {
+	fmt.Println(T("🔍 扫描已装包的 GitHub Homepage，初始化 catalog ...",
+		"🔍 Scanning installed packages' GitHub Homepage to init catalog ..."))
+
+	pkgs, err := state.ScanInstalledGitHubRepos("")
+	if err != nil {
+		return fmt.Errorf("扫描已装包失败: %w", err)
+	}
+	if len(pkgs) == 0 {
+		fmt.Println(T("未发现 Homepage 指向 GitHub 的已装包", "No installed package with GitHub Homepage found"))
+		return nil
+	}
+
+	// 去重并按仓库整理
+	repoPkgs := make(map[string]*state.InstalledGitHubPkg)
+	var repoKeys []string
+	for i := range pkgs {
+		p := pkgs[i]
+		k := strings.ToLower(p.Owner + "/" + p.Repo)
+		if _, ok := repoPkgs[k]; !ok {
+			repoPkgs[k] = &pkgs[i]
+			repoKeys = append(repoKeys, k)
+		}
+	}
+
+	// 加载现有系统目录
+	path := catalog.SystemCatalogPath()
+	entries := make(map[string]catalog.CatalogEntry)
+	if data, rErr := os.ReadFile(path); rErr == nil {
+		toml.Decode(string(data), &entries)
+	}
+
+	added := 0
+	skipped := 0
+	for _, key := range repoKeys {
+		p := repoPkgs[key]
+		name := strings.ToLower(p.Repo)
+		if _, ok := entries[name]; ok {
+			skipped++
+			continue
+		}
+		entries[name] = catalog.CatalogEntry{
+			Repo:       p.Owner + "/" + p.Repo,
+			PrettyName: p.Repo,
+			Website:    fmt.Sprintf("https://github.com/%s/%s", p.Owner, p.Repo),
+			Summary:    fmt.Sprintf("Auto-discovered from installed package: %s", p.PkgName),
+		}
+		added++
+	}
+
+	if added > 0 {
+		if err := writeSystemCatalog(path, entries); err != nil {
+			return fmt.Errorf("写入 catalog 失败: %w", err)
+		}
+	}
+
+	// 合并到 state（供 list/upgrade 映射已装版本）
+	if len(pkgs) > 0 {
+		st, stErr := state.Load()
+		if stErr == nil {
+			if n := state.MergeInstalledToState(st, pkgs); n > 0 {
+				if err := st.Save(); err != nil {
+					return fmt.Errorf("保存状态失败: %w", err)
+				}
+			}
+		}
+	}
+
+	fmt.Println()
+	fmt.Println(T("catalog 初始化完成（未校验 GitHub Releases 的 .deb 架构）:",
+		"Catalog initialized (no GitHub Releases .deb arch check):"))
+	fmt.Printf(T("  ✅ 已加入: %d\n", "  ✅ Added: %d\n"), added)
+	if skipped > 0 {
+		fmt.Printf(T("  ⏭  已存在: %d\n", "  ⏭  Already exists: %d\n"), skipped)
+	}
+	fmt.Printf(T("  配置路径: %s\n", "  Config path: %s\n"), path)
 	return nil
 }
 
@@ -1576,6 +1662,61 @@ func verifyRepoHasDeb(owner, repo string) {
 	fmt.Printf("⚠️  删除 catalog 条目失败: %v\n", delErr)
 }
 
+// compareVersion 比较两个软件版本，返回 -1(a<b) / 0(a==b) / 1(a>b)。
+// 归一化：去掉开头 v/V、忽略 epoch(1:xxx) 前缀；按 [.-_] 分段，
+// 数字段按数值比较，非数字段按字典序比较，缺省段视为更小。
+// 由此保证「已装版本 >= GitHub 最新版本」被判定为正常（不提示可升级）。
+func compareVersion(a, b string) int {
+	norm := func(s string) []string {
+		s = strings.TrimPrefix(s, "v")
+		s = strings.TrimPrefix(s, "V")
+		if i := strings.IndexByte(s, ':'); i >= 0 {
+			s = s[i+1:] // 忽略 epoch
+		}
+		return strings.FieldsFunc(s, func(r rune) bool {
+			return r == '.' || r == '-' || r == '_'
+		})
+	}
+	as, bs := norm(a), norm(b)
+	n := len(as)
+	if len(bs) > n {
+		n = len(bs)
+	}
+	for i := 0; i < n; i++ {
+		var ap, bp string
+		if i < len(as) {
+			ap = as[i]
+		}
+		if i < len(bs) {
+			bp = bs[i]
+		}
+		an, aErr := strconv.Atoi(ap)
+		bn, bErr := strconv.Atoi(bp)
+		switch {
+		case aErr == nil && bErr == nil:
+			if an < bn {
+				return -1
+			}
+			if an > bn {
+				return 1
+			}
+		case aErr == nil && bErr != nil:
+			// 数字段 > 空/字母段（如 1.2.4-1 的 -1 版本号高于 1.2.4）
+			return 1
+		case aErr != nil && bErr == nil:
+			return -1
+		default:
+			if ap < bp {
+				return -1
+			}
+			if ap > bp {
+				return 1
+			}
+		}
+	}
+	return 0
+}
+
 // --- list ---
 
 func cmdList(args []string) error {
@@ -1632,7 +1773,6 @@ func cmdList(args []string) error {
 	names := cat.SortedNames()
 	installedCount := 0
 	upgradableCount := 0
-	orphanCount := 0
 
 	for _, name := range names {
 		entry := cat.Packages[name]
@@ -1646,6 +1786,11 @@ func cmdList(args []string) error {
 		if rec != nil && rec.PkgName != "" {
 			rec.RefreshSystemInfo(rec.PkgName)
 			sysVer = rec.SystemVersion
+		}
+
+		// 仅显示已安装的包（catalog 只保留可管理的已装包）
+		if rec == nil || rec.Removed || sysVer == "" {
+			continue
 		}
 
 		// 获取最新版本
@@ -1666,33 +1811,18 @@ func cmdList(args []string) error {
 			}
 		}
 
-		// 确定状态
-		var status string
-		var installedVer string
+		installedVer := sysVer
+		installedCount++
 
-		if rec != nil && !rec.Removed && sysVer != "" {
-			// 已安装
-			installedVer = sysVer
-			installedCount++
-
-			// 比较版本：用实际安装的 dpkg 版本（sysVer），而非可能漂移的 state 记录
-			if latestVer != "-" && !versionEqual(latestVer, sysVer) {
-				status = "🔄 " + T("可升级", "upgradable")
-				upgradableCount++
-			} else {
-				status = "✅ " + T("已安装", "installed")
-			}
-		} else {
-			// 未安装
-			installedVer = "-"
-			status = "📦 " + T("可安装", "available")
+		// 状态：安装版本 < GitHub 最新版本 → 可升级；否则（>=）→ 正常
+		status := "✅ " + T("正常", "ok")
+		if latestVer != "-" && compareVersion(sysVer, latestVer) < 0 {
+			status = "🔄 " + T("可升级", "upgradable")
+			upgradableCount++
 		}
 
 		if jsonOutput {
-			pkg := listPkg{Name: name, Repo: repo, Status: status}
-			if installedVer != "-" {
-				pkg.InstalledVer = installedVer
-			}
+			pkg := listPkg{Name: name, Repo: repo, Status: status, InstalledVer: installedVer}
 			if latestVer != "-" {
 				pkg.LatestVer = latestVer
 			}
@@ -1707,61 +1837,12 @@ func cmdList(args []string) error {
 		}
 	}
 
-	// 检查 state 中不在 catalog 的包（orphan，仅显示有 GitHub repo 的）
-	for _, rec := range st.List() {
-		if rec.Removed {
-			continue
-		}
-		// 跳过没有 GitHub repo 的包
-		if rec.Owner == "" || rec.Repo == "" {
-			continue
-		}
-		repoKey := rec.Owner + "/" + rec.Repo
-		// 检查是否已在 catalog 中处理
-		found := false
-		for _, entry := range cat.Packages {
-			if entry.Repo == repoKey {
-				found = true
-				break
-			}
-		}
-		if found {
-			continue
-		}
-
-		// 不在 catalog 中的 orphan 包（有 GitHub repo）
-		rec.RefreshSystemInfo(rec.PkgName)
-		sysVer := rec.SystemVersion
-		if sysVer == "" {
-			// 未实际安装，跳过
-			continue
-		}
-		status := "✅ " + T("已安装", "installed")
-		installedCount++
-		orphanCount++
-		if jsonOutput {
-			pkg := listPkg{Name: rec.PkgName, Repo: repoKey, InstalledVer: sysVer, Status: status}
-			jsonPkgs = append(jsonPkgs, pkg)
-		} else {
-			fmt.Printf("%s %s %s %s %s\n",
-				padRight(rec.PkgName, 20),
-				padRight(repoKey, 25),
-				padRight(sysVer, 12),
-				padRight("-", 12),
-				status)
-		}
-	}
-
 	if jsonOutput {
 		jsonData, _ := json.MarshalIndent(jsonPkgs, "", "  ")
 		fmt.Println(string(jsonData))
 	} else {
 		fmt.Println(strings.Repeat("-", 90))
-		totalCount := len(names) + orphanCount
-		fmt.Printf(T("共 %d 个包，%d 个已安装", "Total %d packages, %d installed"), totalCount, installedCount)
-		if upgradableCount > 0 {
-			fmt.Printf(T("，%d 个可升级", ", %d upgradable"), upgradableCount)
-		}
+		fmt.Printf(T("共 %d 个已装包，%d 个可升级", "Total %d installed packages, %d upgradable"), installedCount, upgradableCount)
 		fmt.Println()
 	}
 
