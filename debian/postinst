@@ -39,8 +39,9 @@ for home_dir in /home/*; do
 done
 
 # dpkg hook：监控软件包卸载
+# 注意：使用 || true 确保脚本不存在时不报错（purge 期间脚本可能已被删除）
 cat > /etc/apt/apt.conf.d/99ghdeb-hook << 'HOOK_EOF'
-Dpkg::Post-Invoke { "/usr/share/ghdeb/hooks/remove-monitor.sh"; };
+Dpkg::Post-Invoke { "test -x /usr/share/ghdeb/hooks/remove-monitor.sh && /usr/share/ghdeb/hooks/remove-monitor.sh || true"; };
 HOOK_EOF
 
 echo "✅ ghdeb 安装完成"
