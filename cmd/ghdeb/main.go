@@ -98,8 +98,7 @@ func printUsage() {
   ghdeb upgrade [pkg]                   升级包（不指定则升级所有）
   ghdeb reinstall <pkg>                 重新安装指定包
   ghdeb search <pattern>                在包目录中搜索
-  ghdeb list [--json]                 列出所有已管理的包(纯本地)
-  ghdeb catalog list                    列出包目录中所有条目
+  ghdeb list [--json]                 列出包目录中所有条目(纯本地)
   ghdeb catalog show <name>             显示目录条目详情
   ghdeb catalog add <name> --repo <owner/repo>  添加条目到系统目录
   ghdeb catalog delete <name>           从系统目录删除条目
@@ -124,7 +123,6 @@ func printUsage() {
   ghdeb install sharkdp/bat             通过 owner/repo 安装
   ghdeb install LeisureLinux/ghdeb@v0.6.0  安装指定版本
   ghdeb search monitor                  搜索包含 monitor 的包
-  ghdeb catalog list                    列出所有目录条目
   ghdeb catalog add myapp --repo user/myapp --summary "我的应用"
   ghdeb show rustdesk                   显示包信息
   ghdeb clean                           清理缓存
@@ -138,8 +136,7 @@ Usage:
   ghdeb upgrade [pkg]                   Upgrade packages (all if unspecified)
   ghdeb reinstall <pkg>                 Reinstall a package
   ghdeb search <pattern>                Search in package catalog
-  ghdeb list [--json]                  List managed packages (local only)
-  ghdeb catalog list                    List all catalog entries
+  ghdeb list [--json]                  List all catalog entries (local only)
   ghdeb catalog show <name>             Show catalog entry details
   ghdeb catalog add <name> --repo <owner/repo>  Add entry to system catalog
   ghdeb catalog delete <name>           Remove entry from system catalog
@@ -164,7 +161,6 @@ Examples:
   ghdeb install sharkdp/bat             Install via owner/repo
   ghdeb install LeisureLinux/ghdeb@v0.6.0  Install specific version
   ghdeb search monitor                  Search catalog
-  ghdeb catalog list                    List catalog entries
   ghdeb catalog add myapp --repo user/myapp --summary "My app"
   ghdeb show rustdesk                   Show package info
   ghdeb clean                           Clean cache
@@ -830,15 +826,13 @@ func cmdShow(args []string) error {
 
 func cmdCatalog(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("请指定子命令: list, show, search, add, modify, delete, validate")
+		return fmt.Errorf("请指定子命令: show, search, add, modify, delete, validate")
 	}
 
 	subcmd := args[0]
 	subargs := args[1:]
 
 	switch subcmd {
-	case "list":
-		return cmdCatalogList(subargs)
 	case "show":
 		return cmdCatalogShow(subargs)
 	case "search":
@@ -852,51 +846,8 @@ func cmdCatalog(args []string) error {
 	case "validate":
 		return cmdCatalogValidate(subargs)
 	default:
-		return fmt.Errorf("未知子命令: %s（可用: list, show, search, add, modify, delete, validate）", subcmd)
+		return fmt.Errorf("未知子命令: %s（可用: show, search, add, modify, delete, validate）", subcmd)
 	}
-}
-
-func cmdCatalogList(args []string) error {
-	cat, err := catalog.Load()
-	if err != nil {
-		return fmt.Errorf("加载目录失败: %w", err)
-	}
-
-	entries := cat.AllEntries()
-	if len(entries) == 0 {
-		fmt.Println(T("目录为空", "Catalog is empty"))
-		return nil
-	}
-
-	st, _ := state.Load()
-
-	names := cat.SortedNames()
-	fmt.Printf("%-20s %-30s %s\n", T("名称", "Name"), T("仓库/URL", "Repo/URL"), T("简介", "Summary"))
-	fmt.Println(strings.Repeat("-", 70))
-
-	for _, name := range names {
-		entry := entries[name]
-
-		repoOrURL := entry.Repo
-		if repoOrURL == "" {
-			repoOrURL = truncate(entry.URL, 28)
-		}
-
-		// 检查安装状态
-		installed := ""
-		if st != nil && entry.Repo != "" {
-			rec := st.Get(entry.Repo)
-			if rec != nil && !rec.Removed {
-				installed = " ✅"
-			}
-		}
-
-		summary := truncate(entry.Summary, 40)
-		fmt.Printf("%-20s %-30s %s%s\n", name, repoOrURL, summary, installed)
-	}
-
-	fmt.Printf("\n共 %d 个条目\n", len(entries))
-	return nil
 }
 
 func cmdCatalogShow(args []string) error {
@@ -1258,7 +1209,7 @@ func writeSystemCatalog(path string, entries map[string]catalog.CatalogEntry, fi
 	var sb strings.Builder
 	sb.WriteString("# ghdeb 包目录 (Known Packages Catalog)\n")
 	sb.WriteString("# 路径: " + path + "\n#\n")
-	sb.WriteString("# 维护本目录可使用命令：ghdeb catalog list, show, search, add, modify, delete, validate\n")
+	sb.WriteString("# 维护本目录可使用命令：ghdeb catalog show, search, add, modify, delete, validate\n")
 	// 仅维护首次初始化时间：文件已记录则保留原值，否则写当前时间
 	initAt := time.Now().Format("2006-01-02 15:04:05")
 	if data, rErr := os.ReadFile(path); rErr == nil {
@@ -1586,80 +1537,60 @@ func cmdList(args []string) error {
 		return fmt.Errorf("加载目录失败: %w", err)
 	}
 
-	// 加载 state
-	st, err := state.Load()
-	if err != nil {
-		return err
+	entries := cat.AllEntries()
+	if len(entries) == 0 {
+		fmt.Println(T("目录为空", "Catalog is empty"))
+		return nil
 	}
+
+	st, _ := state.Load()
+
+	names := cat.SortedNames()
 
 	// JSON 输出结构
 	type listPkg struct {
-		Name        string `json:"name"`
-		Repo        string `json:"repo"`
-		InstalledVer string `json:"installed_version,omitempty"`
-		RecordedVer  string `json:"recorded_version,omitempty"`
-		Status       string `json:"status"`
+		Name      string `json:"name"`
+		Repo      string `json:"repo"`
+		URL       string `json:"url,omitempty"`
+		Summary   string `json:"summary,omitempty"`
+		Installed bool   `json:"installed"`
 	}
 	var jsonPkgs []listPkg
 
 	if !jsonOutput {
-		// 表头
-		fmt.Printf("%s %s %s %s %s\n",
-			padRight(T("包名", "Name"), 20),
-			padRight(T("仓库", "Repo"), 25),
-			padRight(T("已装版本", "Installed"), 12),
-			padRight(T("记录版本", "Recorded"), 12),
-			T("状态", "Status"))
-		fmt.Println(strings.Repeat("-", 90))
+		fmt.Printf("%-20s %-30s %s\n", T("名称", "Name"), T("仓库/URL", "Repo/URL"), T("简介", "Summary"))
+		fmt.Println(strings.Repeat("-", 70))
 	}
 
-	// 遍历 catalog 所有条目（纯本地展示，不实时查询 GitHub）
-	names := cat.SortedNames()
-	installedCount := 0
-
 	for _, name := range names {
-		entry := cat.Packages[name]
-		repo := entry.Repo
+		entry := entries[name]
 
-		// 从 state 查找（通过 repo key）
-		rec := st.Get(repo)
-
-		// 检查系统是否实际安装
-		var sysVer string
-		if rec != nil && rec.PkgName != "" {
-			rec.RefreshSystemInfo(rec.PkgName)
-			sysVer = rec.SystemVersion
+		repoOrURL := entry.Repo
+		if repoOrURL == "" {
+			repoOrURL = truncate(entry.URL, 28)
 		}
 
-		// 仅显示已安装的包（catalog 只保留可管理的已装包）
-		if rec == nil || rec.Removed || sysVer == "" {
-			continue
+		// 检查安装状态
+		installed := false
+		if st != nil && entry.Repo != "" {
+			rec := st.Get(entry.Repo)
+			if rec != nil && !rec.Removed {
+				installed = true
+			}
 		}
 
-		// 记录版本取自本地 state（ghdeb 最后一次 install/upgrade 的版本）
-		recordedVer := "-"
-		if rec.CurrentVersion != "" {
-			recordedVer = rec.CurrentVersion
-		}
-
-		installedVer := sysVer
-		installedCount++
-
-		// 纯本地状态：已管理即显示正常
-		status := "✅ " + T("已管理", "managed")
-
+		summary := truncate(entry.Summary, 40)
 		if jsonOutput {
 			jsonPkgs = append(jsonPkgs, listPkg{
-				Name: name, Repo: repo, Status: status,
-				InstalledVer: installedVer, RecordedVer: recordedVer,
+				Name: name, Repo: entry.Repo, URL: entry.URL,
+				Summary: entry.Summary, Installed: installed,
 			})
 		} else {
-			fmt.Printf("%s %s %s %s %s\n",
-				padRight(name, 20),
-				padRight(truncate(repo, 23), 25),
-				padRight(installedVer, 12),
-				padRight(recordedVer, 12),
-				status)
+			mark := ""
+			if installed {
+				mark = " ✅"
+			}
+			fmt.Printf("%-20s %-30s %s%s\n", name, repoOrURL, summary, mark)
 		}
 	}
 
@@ -1667,11 +1598,8 @@ func cmdList(args []string) error {
 		jsonData, _ := json.MarshalIndent(jsonPkgs, "", "  ")
 		fmt.Println(string(jsonData))
 	} else {
-		fmt.Println(strings.Repeat("-", 90))
-		fmt.Printf(T("共 %d 个已装包", "Total %d installed packages"), installedCount)
-		fmt.Println()
+		fmt.Printf("\n共 %d 个条目\n", len(entries))
 	}
-
 	return nil
 }
 
@@ -1746,7 +1674,6 @@ func cmdHistory(args []string) error {
 }
 
 // --- remove ---
-
 
 // cmdCatalogModify 修改目录条目：ghdeb catalog modify <pkgname> --repo <owner/repo>
 func cmdCatalogModify(args []string) error {

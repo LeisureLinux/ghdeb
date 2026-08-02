@@ -50,7 +50,7 @@ ghdeb install gh                      # → cli/cli
 
 # Search the catalog
 ghdeb search monitor                  # regex search by name/summary
-ghdeb catalog list                    # list all catalog entries
+ghdeb list                           # list all catalog entries
 ghdeb catalog show bat                # show entry details
 ```
 
