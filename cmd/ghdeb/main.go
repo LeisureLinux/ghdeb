@@ -1561,8 +1561,8 @@ func cmdList(args []string) error {
 			installedVer = sysVer
 			installedCount++
 
-			// 比较版本（忽略 v 前缀）
-			if latestVer != "-" && !versionEqual(latestVer, rec.CurrentVersion) {
+			// 比较版本：用实际安装的 dpkg 版本（sysVer），而非可能漂移的 state 记录
+			if latestVer != "-" && !versionEqual(latestVer, sysVer) {
 				status = "🔄 " + T("可升级", "upgradable")
 				upgradableCount++
 			} else {
@@ -1932,10 +1932,25 @@ func displayWidth(s string) int {
 	return width
 }
 
-// normalizeVersion 规范化版本号，去掉 v 前缀用于比较
+// normalizeVersion 规范化版本号用于比较：
+//  1. 去掉 v/V 前缀
+//  2. 剥离 Debian 数字修订号后缀（如 1.2.4-1 → 1.2.4），
+//     因为 GitHub release tag 通常不带修订号，且修订号只会让 dpkg 版本更高
 func normalizeVersion(v string) string {
 	v = strings.TrimPrefix(v, "v")
 	v = strings.TrimPrefix(v, "V")
+	if i := strings.LastIndex(v, "-"); i >= 0 {
+		allDigits := true
+		for _, c := range v[i+1:] {
+			if c < '0' || c > '9' {
+				allDigits = false
+				break
+			}
+		}
+		if allDigits && v[i+1:] != "" {
+			v = v[:i]
+		}
+	}
 	return v
 }
 
