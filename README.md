@@ -194,6 +194,8 @@ sudo cp /usr/share/ghdeb/completion/ghdeb.bash /etc/bash_completion.d/ghdeb
 | `XDG_CACHE_HOME` | Override download cache directory |
 | `XDG_STATE_HOME` | Override state file directory |
 
+**Note:** If neither `GITHUB_TOKEN` nor `GH_TOKEN` is set, ghdeb will automatically try to get the token from `gh auth token` (GitHub CLI). This helps avoid API rate limiting when you have gh CLI installed and authenticated.
+
 ## Data Storage (XDG-compliant)
 
 | Path | Purpose |

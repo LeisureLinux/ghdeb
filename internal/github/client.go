@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -58,11 +59,25 @@ func getProxyFunc() func(*http.Request) (*url.URL, error) {
 	}
 }
 
+// getGhCliToken 尝试从 gh CLI 获取 token
+func getGhCliToken() string {
+	cmd := exec.Command("gh", "auth", "token")
+	output, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(output))
+}
+
 // NewClient 创建客户端，自动从参数或环境变量获取 token
 func NewClient() *Client {
 	token := os.Getenv("GITHUB_TOKEN")
 	if token == "" {
 		token = os.Getenv("GH_TOKEN")
+	}
+	if token == "" {
+		// 尝试从 gh CLI 获取 token
+		token = getGhCliToken()
 	}
 	return &Client{
 		// API 客户端：30s 全局超时（JSON 响应很小）
