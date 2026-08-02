@@ -3,7 +3,7 @@
 # 安装: 复制到 /usr/share/zsh/site-functions/_ghdeb 或 ~/.zsh/completions/_ghdeb
 
 _ghdeb_get_packages() {
-    local state_file="${XDG_STATE_HOME:-$HOME/.local/state}/ghdeb/installed.json"
+    local state_file="/var/cache/ghdeb/installed.json"
     if [[ -f "$state_file" ]]; then
         python3 -c "
 import json, sys
@@ -19,13 +19,9 @@ except:
 }
 
 _ghdeb_get_catalog_names() {
-    local catalog_file="/usr/share/ghdeb/catalog.toml"
-    local user_catalog="${XDG_CONFIG_HOME:-$HOME/.config}/ghdeb/catalog.toml"
+    local catalog_file="/etc/ghdeb/catalog.toml"
     if [[ -f "$catalog_file" ]]; then
         grep '^\[' "$catalog_file" | sed 's/^\[//;s/\]$//'
-    fi
-    if [[ -f "$user_catalog" ]]; then
-        grep '^\[' "$user_catalog" | sed 's/^\[//;s/\]$//'
     fi
 }
 
@@ -46,6 +42,7 @@ _ghdeb() {
         'purge:Uninstall and purge config'
         'clean:Clean .deb cache'
         'set-repo:Set GitHub repository for a package'
+        'test-homepage:Test homepage for GitHub links'
         'version:Show ghdeb version'
         'help:Show help message'
     )
@@ -86,7 +83,8 @@ _ghdeb() {
                 list)
                     _arguments \
                         '--refresh[Force refresh version cache]' \
-                        '-r[Force refresh version cache]'
+                        '-r[Force refresh version cache]' \
+                        '--json[Output as JSON]'
                     ;;
                 clean)
                     _arguments '--dry-run[Preview without deleting]'
@@ -94,7 +92,7 @@ _ghdeb() {
                 catalog)
                     if (( CURRENT == 2 )); then
                         local -a subcmds
-                        subcmds=('list:List all entries' 'show:Show entry details' 'search:Search catalog' 'add:Add entry' 'delete:Delete entry' 'cleanup:Clean up duplicates')
+                        subcmds=('list:List all entries' 'show:Show entry details' 'search:Search catalog' 'add:Add entry' 'delete:Delete entry')
                         _describe -t subcmds 'catalog subcommand' subcmds
                     else
                         case $words[2] in

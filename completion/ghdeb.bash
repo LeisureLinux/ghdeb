@@ -3,8 +3,8 @@
 # 或添加到 ~/.bashrc: source /usr/share/bash-completion/completions/ghdeb
 
 _ghdeb_get_packages() {
-    # 获取已管理的包列表
-    local state_file="${XDG_STATE_HOME:-$HOME/.local/state}/ghdeb/installed.json"
+    # 获取已管理的包列表（从 /var/cache/ghdeb/installed.json）
+    local state_file="/var/cache/ghdeb/installed.json"
     if [ -f "$state_file" ]; then
         python3 -c "
 import json, sys
@@ -20,14 +20,9 @@ except:
 }
 
 _ghdeb_get_catalog_names() {
-    # 获取 catalog 中的短名称
-    local catalog_file="/usr/share/ghdeb/catalog.toml"
-    local user_catalog="${XDG_CONFIG_HOME:-$HOME/.config}/ghdeb/catalog.toml"
-    
-    {
-        [ -f "$catalog_file" ] && grep '^\[' "$catalog_file"
-        [ -f "$user_catalog" ] && grep '^\[' "$user_catalog"
-    } 2>/dev/null | sed 's/^\[//;s/\]$//' | sort -u
+    # 获取 catalog 中的短名称（从 /etc/ghdeb/catalog.toml）
+    local catalog_file="/etc/ghdeb/catalog.toml"
+    [ -f "$catalog_file" ] && grep '^\[' "$catalog_file" | sed 's/^\[//;s/\]$//' | sort -u
 }
 
 _ghdeb() {
@@ -59,7 +54,7 @@ _ghdeb() {
             COMPREPLY=( $(compgen -W "--deep" -- "$cur") )
             ;;
         list|ls)
-            COMPREPLY=( $(compgen -W "--refresh -r" -- "$cur") )
+            COMPREPLY=( $(compgen -W "--refresh -r --json" -- "$cur") )
             ;;
         clean)
             COMPREPLY=( $(compgen -W "--dry-run -n" -- "$cur") )
