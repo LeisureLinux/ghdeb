@@ -1158,7 +1158,8 @@ func writeSystemCatalog(path string, entries map[string]catalog.CatalogEntry, fi
 	var sb strings.Builder
 	sb.WriteString("# ghdeb 包目录 (Known Packages Catalog)\n")
 	sb.WriteString("# 路径: " + path + "\n#\n")
-	sb.WriteString("# 编辑此文件需 root 权限: sudo vim /etc/ghdeb/catalog.toml\n\n")
+	sb.WriteString("# 维护本目录可使用命令：ghdeb catalog init, list, show, search, add, delete\n")
+	sb.WriteString("# Catalog initialized at " + time.Now().Format("2006-01-02 15:04:05") + "\n\n")
 
 	// 输出顺序：firstKeys 强制排最前，其余按名称排序
 	ordered := make([]string, 0, len(firstKeys)+len(entries))
