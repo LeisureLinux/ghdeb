@@ -344,3 +344,11 @@ pretty_name = "balenaEtcher"
 website = "https://etcher.balena.io"
 summary = "Flash OS images to SD cards & USB drives, safely and easily"
 
+
+# === 包管理工具 ===
+
+[ghdeb]
+repo = "LeisureLinux/ghdeb"
+pretty_name = "ghdeb"
+website = "https://github.com/LeisureLinux/ghdeb"
+summary = "管理从 GitHub Releases 下载的 .deb 包"
