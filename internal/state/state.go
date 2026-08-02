@@ -3,6 +3,7 @@ package state
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -53,6 +54,7 @@ type State struct {
 	Packages map[string]*PackageRecord `json:"packages"` // key = "owner/repo"
 }
 
+// defaultStatePath 默认状态文件路径
 func defaultStatePath() string {
 	return "/var/cache/ghdeb/installed.json"
 }
@@ -81,17 +83,51 @@ func Load() (*State, error) {
 	return s, nil
 }
 
-// Save 保存状态到磁盘
+// Save 保存状态到磁盘（权限不足时自动 sudo 写入）
 func (s *State) Save() error {
 	dir := filepath.Dir(s.path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return err
+		// MkdirAll 失败，尝试 sudo
+		if err := sudoMkdirAll(dir); err != nil {
+			return fmt.Errorf("创建目录失败（可能需要 sudo ghdeb）: %w", err)
+		}
 	}
 	data, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(s.path, data, 0644)
+	if err := os.WriteFile(s.path, data, 0644); err != nil {
+		if errors.Is(err, os.ErrPermission) {
+			// 权限不足，使用 sudo tee 写入
+			return sudoWriteFile(s.path, data)
+		}
+		return err
+	}
+	return nil
+}
+
+// sudoWriteFile 用 sudo tee 写入文件（需要用户输入密码）
+func sudoWriteFile(path string, data []byte) error {
+	cmd := exec.Command("sudo", "tee", path)
+	cmd.Stdin = strings.NewReader(string(data))
+	cmd.Stdout = nil // 抑制输出
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("写入失败（sudo 被拒绝或失败）: %w", err)
+	}
+	return nil
+}
+
+// sudoMkdirAll 用 sudo 创建目录
+func sudoMkdirAll(path string) error {
+	cmd := exec.Command("sudo", "mkdir", "-p", path)
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+	cmd = exec.Command("sudo", "chmod", "755", path)
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
 }
 
 // Get 获取某个仓库的记录
@@ -139,7 +175,7 @@ func (s *State) SetUpgrade(repo, version, debFile, debPath, releaseURL string) {
 		DebFile:     debFile,
 		DebPath:     debPath,
 		ReleaseURL:  releaseURL,
-		Timestamp:  now,
+		Timestamp:   now,
 	})
 }
 

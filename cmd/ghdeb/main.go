@@ -3,6 +3,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/BurntSushi/toml"
 	"os"
@@ -19,7 +20,7 @@ import (
 	"github.com/leisurelinux/ghdeb/internal/state"
 )
 
-const version = "0.7.2"
+const version = "0.7.3"
 
 func main() {
 	// 检查是否使用 --json，如果是则不打印 banner
@@ -1083,8 +1084,20 @@ func writeSystemCatalog(path string, entries map[string]catalog.CatalogEntry) er
 		sb.WriteString("\n")
 	}
 	
-	if err := os.WriteFile(path, []byte(sb.String()), 0644); err != nil {
-		return fmt.Errorf("写入失败 (可能需要 sudo 权限): %w", err)
+	data := []byte(sb.String())
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		if errors.Is(err, os.ErrPermission) {
+			// 权限不足，使用 sudo tee 写入
+			cmd := exec.Command("sudo", "tee", path)
+			cmd.Stdin = strings.NewReader(string(data))
+			cmd.Stdout = nil
+			cmd.Stderr = os.Stderr
+			if err := cmd.Run(); err != nil {
+				return fmt.Errorf("写入失败（sudo 被拒绝或失败）: %w", err)
+			}
+			return nil
+		}
+		return fmt.Errorf("写入失败: %w", err)
 	}
 	
 	return nil
