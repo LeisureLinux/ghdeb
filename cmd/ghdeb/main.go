@@ -2,6 +2,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"sort"
@@ -17,7 +18,7 @@ import (
 	"github.com/leisurelinux/ghdeb/internal/state"
 )
 
-const version = "0.6.6"
+const version = "0.6.7"
 
 func main() {
 	fmt.Printf(T("ghdeb v%s - 管理从 GitHub Releases 下载的 .deb 包 © LeisureLinux\n", "ghdeb v%s - manage .deb packages downloaded from GitHub Releases © LeisureLinux\n"), version)
@@ -595,7 +596,21 @@ func cmdShow(args []string) error {
 		return fmt.Errorf("请指定包名或仓库，如: ghdeb show bat")
 	}
 
-	arg := args[0]
+	// 解析 --json 参数
+	jsonOutput := false
+	var pkgArgs []string
+	for _, a := range args {
+		if a == "--json" {
+			jsonOutput = true
+		} else {
+			pkgArgs = append(pkgArgs, a)
+		}
+	}
+
+	if len(pkgArgs) == 0 {
+		return fmt.Errorf("请指定包名或仓库，如: ghdeb show bat")
+	}
+	arg := pkgArgs[0]
 	cat, _ := catalog.Load()
 
 	// 尝试解析为 owner/repo
@@ -643,68 +658,145 @@ func cmdShow(args []string) error {
 		}
 	}
 
-	// 显示信息
-	fmt.Println(strings.Repeat("─", 50))
-	if catName != "" {
-		fmt.Printf(T("短名称:   %s\n", "Short name:  %s\n"), catName)
+	// JSON 输出结构
+	type showInfo struct {
+		ShortName      string `json:"short_name,omitempty"`
+		Repo           string `json:"repo"`
+		PrettyName     string `json:"pretty_name,omitempty"`
+		Website        string `json:"website,omitempty"`
+		Summary        string `json:"summary,omitempty"`
+		Status         string `json:"status,omitempty"`
+		RecordedVer    string `json:"recorded_version,omitempty"`
+		SystemVer      string `json:"system_version,omitempty"`
+		Arch           string `json:"arch,omitempty"`
+		DebName        string `json:"deb_name,omitempty"`
+		LatestVer      string `json:"latest_version,omitempty"`
+		ReleaseURL     string `json:"release_url,omitempty"`
+		MatchFile      string `json:"match_file,omitempty"`
+		MatchSize      string `json:"match_size,omitempty"`
 	}
-	fmt.Printf(T("仓库:     %s\n", "Repo:        %s\n"), repoKey)
+	var info showInfo
+	info.Repo = repoKey
+
+	if !jsonOutput {
+		// 显示信息
+		fmt.Println(strings.Repeat("─", 50))
+	}
+	if catName != "" {
+		info.ShortName = catName
+		if !jsonOutput {
+			fmt.Printf(T("短名称:   %s\n", "Short name:  %s\n"), catName)
+		}
+	}
+	if !jsonOutput {
+		fmt.Printf(T("仓库:     %s\n", "Repo:        %s\n"), repoKey)
+	}
 	if catEntry != nil {
 		if catEntry.PrettyName != "" {
-			fmt.Printf(T("显示名:   %s\n", "Pretty name: %s\n"), catEntry.PrettyName)
+			info.PrettyName = catEntry.PrettyName
+			if !jsonOutput {
+				fmt.Printf(T("显示名:   %s\n", "Pretty name: %s\n"), catEntry.PrettyName)
+			}
 		}
 		if catEntry.Website != "" {
-			fmt.Printf(T("网站:     %s\n", "Website:     %s\n"), catEntry.Website)
+			info.Website = catEntry.Website
+			if !jsonOutput {
+				fmt.Printf(T("网站:     %s\n", "Website:     %s\n"), catEntry.Website)
+			}
 		}
 		if catEntry.Summary != "" {
-			fmt.Printf(T("简介:     %s\n", "Summary:     %s\n"), catEntry.Summary)
+			info.Summary = catEntry.Summary
+			if !jsonOutput {
+				fmt.Printf(T("简介:     %s\n", "Summary:     %s\n"), catEntry.Summary)
+			}
 		}
 	}
 
 	// 安装状态
 	if rec != nil {
-		fmt.Println(strings.Repeat("─", 50))
-		if rec.Removed {
-			fmt.Printf(T("状态:     ❌ 已移除\n", "Status:      ❌ removed\n"))
-		} else {
-			fmt.Printf(T("状态:     ✅ 已管理\n", "Status:      ✅ managed\n"))
+		if !jsonOutput {
+			fmt.Println(strings.Repeat("─", 50))
 		}
-		fmt.Printf(T("记录版本: %s\n", "Recorded:    %s\n"), rec.CurrentVersion)
+		if rec.Removed {
+			info.Status = "removed"
+			if !jsonOutput {
+				fmt.Printf(T("状态:     ❌ 已移除\n", "Status:      ❌ removed\n"))
+			}
+		} else {
+			info.Status = "managed"
+			if !jsonOutput {
+				fmt.Printf(T("状态:     ✅ 已管理\n", "Status:      ✅ managed\n"))
+			}
+		}
+		info.RecordedVer = rec.CurrentVersion
+		if !jsonOutput {
+			fmt.Printf(T("记录版本: %s\n", "Recorded:    %s\n"), rec.CurrentVersion)
+		}
 		rec.RefreshSystemInfo(rec.PkgName)
 		if rec.SystemVersion != "" {
-			fmt.Printf(T("系统版本: %s\n", "System:      %s\n"), rec.SystemVersion)
+			info.SystemVer = rec.SystemVersion
+			if !jsonOutput {
+				fmt.Printf(T("系统版本: %s\n", "System:      %s\n"), rec.SystemVersion)
+			}
 		}
 		if rec.Arch != "" {
-			fmt.Printf(T("架构:     %s\n", "Arch:        %s\n"), rec.Arch)
+			info.Arch = rec.Arch
+			if !jsonOutput {
+				fmt.Printf(T("架构:     %s\n", "Arch:        %s\n"), rec.Arch)
+			}
 		}
 		if rec.PkgName != "" {
-			fmt.Printf(T("deb 包名: %s\n", "Deb name:    %s\n"), rec.PkgName)
+			info.DebName = rec.PkgName
+			if !jsonOutput {
+				fmt.Printf(T("deb 包名: %s\n", "Deb name:    %s\n"), rec.PkgName)
+			}
 		}
 	}
 
 	// GitHub release 信息
-	fmt.Println(strings.Repeat("─", 50))
+	if !jsonOutput {
+		fmt.Println(strings.Repeat("─", 50))
+	}
 	client := gh.NewClient()
 	release, relErr := client.GetLatestRelease(owner, repo)
 	if relErr == nil {
-		fmt.Printf(T("最新版本: %s\n", "Latest:      %s\n"), release.TagName)
+		info.LatestVer = release.TagName
+		if !jsonOutput {
+			fmt.Printf(T("最新版本: %s\n", "Latest:      %s\n"), release.TagName)
+		}
 		if release.HTMLURL != "" {
-			fmt.Printf("Release:     %s\n", release.HTMLURL)
+			info.ReleaseURL = release.HTMLURL
+			if !jsonOutput {
+				fmt.Printf("Release:     %s\n", release.HTMLURL)
+			}
 		}
 		arch, _ := deb.DetectArch()
 		if arch != nil {
 			result, findErr := gh.FindAssetWithFallback(release, arch)
 			if result != nil && result.Asset != nil {
-				fmt.Printf(T("匹配文件: %s (%s)\n", "Match:       %s (%s)\n"), result.Asset.Name, formatSize(result.Asset.Size))
+				info.MatchFile = result.Asset.Name
+				info.MatchSize = formatSize(result.Asset.Size)
+				if !jsonOutput {
+					fmt.Printf(T("匹配文件: %s (%s)\n", "Match:       %s (%s)\n"), result.Asset.Name, formatSize(result.Asset.Size))
+				}
 			} else if findErr != nil {
-				fmt.Printf(T("匹配文件: ⚠️ %v\n", "Match:       ⚠️ %v\n"), findErr)
+				if !jsonOutput {
+					fmt.Printf(T("匹配文件: ⚠️ %v\n", "Match:       ⚠️ %v\n"), findErr)
+				}
 			}
 		}
 	} else {
-		fmt.Printf(T("最新版本: ⚠️ 获取失败: %v\n", "Latest:      ⚠️ failed: %v\n"), relErr)
+		if !jsonOutput {
+			fmt.Printf(T("最新版本: ⚠️ 获取失败: %v\n", "Latest:      ⚠️ failed: %v\n"), relErr)
+		}
 	}
 
-	fmt.Println(strings.Repeat("─", 50))
+	if jsonOutput {
+		jsonData, _ := json.MarshalIndent(info, "", "  ")
+		fmt.Println(string(jsonData))
+	} else {
+		fmt.Println(strings.Repeat("─", 50))
+	}
 	return nil
 }
 
@@ -1180,9 +1272,13 @@ func cmdScan(args []string) error {
 
 func cmdList(args []string) error {
 	refresh := false
+	jsonOutput := false
 	for _, a := range args {
 		if a == "--refresh" || a == "-r" {
 			refresh = true
+		}
+		if a == "--json" {
+			jsonOutput = true
 		}
 	}
 
@@ -1203,14 +1299,26 @@ func cmdList(args []string) error {
 		gh.InvalidateCache("", "")
 	}
 
-	// 表头
-	fmt.Printf("%s %s %s %s %s\n",
-		padRight(T("包名", "Name"), 20),
-		padRight(T("仓库", "Repo"), 25),
-		padRight(T("已装版本", "Installed"), 12),
-		padRight(T("最新版本", "Latest"), 12),
-		T("状态", "Status"))
-	fmt.Println(strings.Repeat("-", 90))
+	// JSON 输出结构
+	type listPkg struct {
+		Name           string `json:"name"`
+		Repo           string `json:"repo"`
+		InstalledVer   string `json:"installed_version,omitempty"`
+		LatestVer      string `json:"latest_version,omitempty"`
+		Status         string `json:"status"`
+	}
+	var jsonPkgs []listPkg
+
+	if !jsonOutput {
+		// 表头
+		fmt.Printf("%s %s %s %s %s\n",
+			padRight(T("包名", "Name"), 20),
+			padRight(T("仓库", "Repo"), 25),
+			padRight(T("已装版本", "Installed"), 12),
+			padRight(T("最新版本", "Latest"), 12),
+			T("状态", "Status"))
+		fmt.Println(strings.Repeat("-", 90))
+	}
 
 	// 遍历 catalog 所有条目
 	names := cat.SortedNames()
@@ -1272,12 +1380,23 @@ func cmdList(args []string) error {
 			status = "📦 " + T("可安装", "available")
 		}
 
-		fmt.Printf("%s %s %s %s %s\n",
-			padRight(name, 20),
-			padRight(truncate(repo, 23), 25),
-			padRight(installedVer, 12),
-			padRight(latestVer, 12),
-			status)
+		if jsonOutput {
+			pkg := listPkg{Name: name, Repo: repo, Status: status}
+			if installedVer != "-" {
+				pkg.InstalledVer = installedVer
+			}
+			if latestVer != "-" {
+				pkg.LatestVer = latestVer
+			}
+			jsonPkgs = append(jsonPkgs, pkg)
+		} else {
+			fmt.Printf("%s %s %s %s %s\n",
+				padRight(name, 20),
+				padRight(truncate(repo, 23), 25),
+				padRight(installedVer, 12),
+				padRight(latestVer, 12),
+				status)
+		}
 	}
 
 	// 检查 state 中不在 catalog 的包（orphan，仅显示有 GitHub repo 的）
@@ -1312,21 +1431,31 @@ func cmdList(args []string) error {
 		status := "✅ " + T("已安装", "installed")
 		installedCount++
 		orphanCount++
-		fmt.Printf("%s %s %s %s %s\n",
-			padRight(rec.PkgName, 20),
-			padRight(repoKey, 25),
-			padRight(sysVer, 12),
-			padRight("-", 12),
-			status)
+		if jsonOutput {
+			pkg := listPkg{Name: rec.PkgName, Repo: repoKey, InstalledVer: sysVer, Status: status}
+			jsonPkgs = append(jsonPkgs, pkg)
+		} else {
+			fmt.Printf("%s %s %s %s %s\n",
+				padRight(rec.PkgName, 20),
+				padRight(repoKey, 25),
+				padRight(sysVer, 12),
+				padRight("-", 12),
+				status)
+		}
 	}
 
-	fmt.Println(strings.Repeat("-", 90))
-	totalCount := len(names) + orphanCount
-	fmt.Printf(T("共 %d 个包，%d 个已安装", "Total %d packages, %d installed"), totalCount, installedCount)
-	if upgradableCount > 0 {
-		fmt.Printf(T("，%d 个可升级", ", %d upgradable"), upgradableCount)
+	if jsonOutput {
+		jsonData, _ := json.MarshalIndent(jsonPkgs, "", "  ")
+		fmt.Println(string(jsonData))
+	} else {
+		fmt.Println(strings.Repeat("-", 90))
+		totalCount := len(names) + orphanCount
+		fmt.Printf(T("共 %d 个包，%d 个已安装", "Total %d packages, %d installed"), totalCount, installedCount)
+		if upgradableCount > 0 {
+			fmt.Printf(T("，%d 个可升级", ", %d upgradable"), upgradableCount)
+		}
+		fmt.Println()
 	}
-	fmt.Println()
 
 	return nil
 }
