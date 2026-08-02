@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-VERSION="0.7.7"
+VERSION="0.7.8"
 
 # 支持的架构映射: go arch -> dpkg arch
 declare -A ARCH_MAP=(
@@ -38,7 +38,6 @@ echo "📁 创建包目录结构..."
 mkdir -p ${PKG_DIR}/DEBIAN
 mkdir -p ${PKG_DIR}/usr/bin
 mkdir -p ${PKG_DIR}/etc/ghdeb
-mkdir -p ${PKG_DIR}/var/cache/ghdeb
 mkdir -p ${PKG_DIR}/usr/share/man/man1
 mkdir -p ${PKG_DIR}/usr/share/man/zh_CN/man1
 mkdir -p ${PKG_DIR}/usr/share/bash-completion/completions
@@ -88,6 +87,12 @@ cp debian/prerm ${PKG_DIR}/DEBIAN/prerm
 chmod 755 ${PKG_DIR}/DEBIAN/prerm
 cp debian/postrm ${PKG_DIR}/DEBIAN/postrm
 chmod 755 ${PKG_DIR}/DEBIAN/postrm
+
+# 标记配置文件（conffiles），升级时保留用户修改
+echo '/etc/ghdeb/catalog.toml' > ${PKG_DIR}/DEBIAN/conffiles
+
+# 统一修正所有目录权限为 755（避免 umask 导致 775）
+find ${PKG_DIR} -type d -exec chmod 755 {} +
 
 # 构建 .deb 包
 echo "📦 打包 .deb [${TARGET_ARCH}]..."

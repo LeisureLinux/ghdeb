@@ -2,18 +2,16 @@
 set -e
 
 # ghdeb postinst 脚本 - root 权限执行
+# 核心原则：所有目录和文件必须显式设置 root:root，不依赖 dpkg 提取时的所有权
 
-# 创建目录（root 所有，标准权限）
-mkdir -p /etc/ghdeb
-mkdir -p /var/cache/ghdeb
-mkdir -p /usr/share/ghdeb/hooks
+# 使用 install -d 原子创建目录（同时设置 owner/group/mode）
+install -d -m 755 -o root -g root /etc/ghdeb
+install -d -m 755 -o root -g root /var/cache/ghdeb
+install -d -m 755 -o root -g root /usr/share/ghdeb/hooks
 
-# 强制确保 owner:group = root:root
+# 强制修正目录所有权（防止 dpkg 提取时带入错误 GID）
 chown root:root /etc/ghdeb
-chmod 755 /etc/ghdeb
-
 chown root:root /var/cache/ghdeb
-chmod 755 /var/cache/ghdeb
 
 # 状态文件（root 写，其他只读）
 if [ ! -f /var/cache/ghdeb/installed.json ]; then
@@ -22,13 +20,13 @@ fi
 chown root:root /var/cache/ghdeb/installed.json
 chmod 644 /var/cache/ghdeb/installed.json
 
-# catalog 文件（从包中安装的）
+# catalog 配置文件（从包中安装的，确保正确所有权）
 if [ -f /etc/ghdeb/catalog.toml ]; then
     chown root:root /etc/ghdeb/catalog.toml
     chmod 644 /etc/ghdeb/catalog.toml
 fi
 
-# 迁移旧状态文件（如果新文件为空）
+# 迁移旧状态文件（从用户目录迁移到系统目录）
 for home_dir in /home/*; do
     OLD_STATE="$home_dir/.local/state/ghdeb/installed.json"
     if [ -f "$OLD_STATE" ] && [ ! -s /var/cache/ghdeb/installed.json ]; then
