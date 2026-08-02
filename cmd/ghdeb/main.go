@@ -946,11 +946,24 @@ func cmdCatalogInit(args []string) error {
 		toml.Decode(string(data), &entries)
 	}
 
+	// 始终保留并置顶 ghdeb 自身条目
+	if _, ok := entries["ghdeb"]; !ok {
+		entries["ghdeb"] = catalog.CatalogEntry{
+			Repo:       "LeisureLinux/ghdeb",
+			PrettyName: "ghdeb",
+			Website:    "https://github.com/LeisureLinux/ghdeb",
+			Summary:    "管理从 GitHub Releases 下载的 .deb 包",
+		}
+	}
+
 	added := 0
 	skipped := 0
 	for _, key := range repoKeys {
 		p := repoPkgs[key]
 		name := strings.ToLower(p.Repo)
+		if name == "ghdeb" {
+			continue // ghdeb 自身已保留在头部
+		}
 		if _, ok := entries[name]; ok {
 			skipped++
 			continue
@@ -964,10 +977,8 @@ func cmdCatalogInit(args []string) error {
 		added++
 	}
 
-	if added > 0 {
-		if err := writeSystemCatalog(path, entries); err != nil {
-			return fmt.Errorf("写入 catalog 失败: %w", err)
-		}
+	if err := writeSystemCatalog(path, entries, "ghdeb"); err != nil {
+		return fmt.Errorf("写入 catalog 失败: %w", err)
 	}
 
 	// 合并到 state（供 list/upgrade 映射已装版本）
@@ -1137,7 +1148,7 @@ func removeFromSystemCatalog(name string) error {
 }
 
 // writeSystemCatalog 写入系统级目录文件
-func writeSystemCatalog(path string, entries map[string]catalog.CatalogEntry) error {
+func writeSystemCatalog(path string, entries map[string]catalog.CatalogEntry, firstKeys ...string) error {
 	// 确保目录存在
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -1149,14 +1160,25 @@ func writeSystemCatalog(path string, entries map[string]catalog.CatalogEntry) er
 	sb.WriteString("# 路径: " + path + "\n#\n")
 	sb.WriteString("# 编辑此文件需 root 权限: sudo vim /etc/ghdeb/catalog.toml\n\n")
 
-	// 按名称排序输出
-	names := make([]string, 0, len(entries))
-	for name := range entries {
-		names = append(names, name)
+	// 输出顺序：firstKeys 强制排最前，其余按名称排序
+	ordered := make([]string, 0, len(firstKeys)+len(entries))
+	seen := make(map[string]bool)
+	for _, k := range firstKeys {
+		if _, ok := entries[k]; ok && !seen[k] {
+			ordered = append(ordered, k)
+			seen[k] = true
+		}
 	}
-	sort.Strings(names)
+	rest := make([]string, 0, len(entries))
+	for name := range entries {
+		if !seen[name] {
+			rest = append(rest, name)
+		}
+	}
+	sort.Strings(rest)
+	ordered = append(ordered, rest...)
 
-	for _, name := range names {
+	for _, name := range ordered {
 		entry := entries[name]
 		sb.WriteString(fmt.Sprintf("[%s]\n", name))
 		if entry.Repo != "" {
