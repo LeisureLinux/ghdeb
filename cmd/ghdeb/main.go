@@ -17,7 +17,7 @@ import (
 	"github.com/leisurelinux/ghdeb/internal/state"
 )
 
-const version = "0.6.2"
+const version = "0.6.3"
 
 func main() {
 	fmt.Printf(T("ghdeb v%s - 管理从 GitHub Releases 下载的 .deb 包 © LeisureLinux\n", "ghdeb v%s - manage .deb packages downloaded from GitHub Releases © LeisureLinux\n"), version)
@@ -1136,9 +1136,11 @@ func cmdList(args []string) error {
 	}
 
 	// 表头
-	fmt.Printf("%-20s %-25s %-12s %-12s %-15s\n",
-		T("包名", "Name"), T("仓库", "Repo"),
-		T("已装版本", "Installed"), T("最新版本", "Latest"),
+	fmt.Printf("%s %s %s %s %s\n",
+		padRight(T("包名", "Name"), 20),
+		padRight(T("仓库", "Repo"), 25),
+		padRight(T("已装版本", "Installed"), 12),
+		padRight(T("最新版本", "Latest"), 12),
 		T("状态", "Status"))
 	fmt.Println(strings.Repeat("-", 90))
 
@@ -1201,8 +1203,12 @@ func cmdList(args []string) error {
 			status = "📦 " + T("可安装", "available")
 		}
 
-		fmt.Printf("%-20s %-25s %-12s %-12s %-15s\n",
-			name, truncate(repo, 23), installedVer, latestVer, status)
+		fmt.Printf("%s %s %s %s %s\n",
+			padRight(name, 20),
+			padRight(truncate(repo, 23), 25),
+			padRight(installedVer, 12),
+			padRight(latestVer, 12),
+			status)
 	}
 
 	// 检查 state 中不在 catalog 的包（orphan，仅显示有 GitHub repo 的）
@@ -1234,8 +1240,12 @@ func cmdList(args []string) error {
 			sysVer = "-"
 		}
 		status := "✅ " + T("已安装", "installed")
-		fmt.Printf("%-20s %-25s %-12s %-12s %-15s\n",
-			rec.PkgName, repoKey, sysVer, "-", status)
+		fmt.Printf("%s %s %s %s %s\n",
+			padRight(rec.PkgName, 20),
+			padRight(repoKey, 25),
+			padRight(sysVer, 12),
+			padRight("-", 12),
+			status)
 	}
 
 	fmt.Println(strings.Repeat("-", 90))
@@ -1508,5 +1518,32 @@ func truncate(s string, maxLen int) string {
 	}
 	return s[:maxLen-3] + "..."
 }
+// displayWidth 计算字符串的显示宽度（中文字符占 2 个宽度）
+func displayWidth(s string) int {
+	width := 0
+	for _, r := range s {
+		if r >= 0x4E00 && r <= 0x9FFF || // CJK 统一汉字
+		   r >= 0x3000 && r <= 0x303F || // CJK 符号和标点
+		   r >= 0xFF00 && r <= 0xFFEF || // 全角 ASCII 和半角形式
+		   r >= 0x3400 && r <= 0x4DBF || // CJK 扩展 A
+		   r >= 0x20000 && r <= 0x2A6DF { // CJK 扩展 B
+			width += 2
+		} else {
+			width += 1
+		}
+	}
+	return width
+}
+
+// padRight 右填充空格到指定显示宽度
+func padRight(s string, width int) string {
+	currentWidth := displayWidth(s)
+	if currentWidth >= width {
+		return s
+	}
+	return s + strings.Repeat(" ", width-currentWidth)
+}
+
+
 
 var _ = syscall.Geteuid

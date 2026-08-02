@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-VERSION="0.6.2"
+VERSION="0.6.3"
 
 # 支持的架构映射: go arch -> dpkg arch
 declare -A ARCH_MAP=(
