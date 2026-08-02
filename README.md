@@ -8,7 +8,7 @@
 ```bash
 ghdeb install LeisureLinux/ghdeb      # install latest ghdeb
 ghdeb upgrade                         # upgrade all managed packages
-ghdeb list                            # list installed packages
+ghdeb list                            # list all catalog entries (installed/latest version)
 ```
 
 ## What problem does ghdeb solve?

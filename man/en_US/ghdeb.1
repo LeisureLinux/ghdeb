@@ -44,11 +44,11 @@ regular expressions.
 .B ghdeb list
 .RB [ \-\-json ]
 .PP
-List all managed packages from the local catalog and state (fully offline).
-Shows short name, repo, installed version, and recorded version. No network
-access is performed; use
-.B validate
-to check for newer versions.
+List all catalog entries. Shows short name, repo, installed version, and the
+latest version from GitHub. The latest version prefers a 24-hour local cache
+and is fetched from GitHub only when the cache is missing or expired.
+Entries whose installed version is older than the latest are flagged as
+upgradeable.
 .TP
 .B \-\-json
 Output the list as JSON.

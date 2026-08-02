@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -98,7 +99,7 @@ func printUsage() {
   ghdeb upgrade [pkg]                   升级包（不指定则升级所有）
   ghdeb reinstall <pkg>                 重新安装指定包
   ghdeb search <pattern>                在包目录中搜索
-  ghdeb list [--json]                 列出包目录中所有条目(纯本地)
+  ghdeb list [--json]                 列出目录所有条目，含已装/最新版本(本地+GitHub缓存)
   ghdeb catalog show <name>             显示目录条目详情
   ghdeb catalog add <name> --repo <owner/repo>  添加条目到系统目录
   ghdeb catalog delete <name>           从系统目录删除条目
@@ -136,7 +137,7 @@ Usage:
   ghdeb upgrade [pkg]                   Upgrade packages (all if unspecified)
   ghdeb reinstall <pkg>                 Reinstall a package
   ghdeb search <pattern>                Search in package catalog
-  ghdeb list [--json]                  List all catalog entries (local only)
+  ghdeb list [--json]                  List all catalog entries, with installed/latest version
   ghdeb catalog show <name>             Show catalog entry details
   ghdeb catalog add <name> --repo <owner/repo>  Add entry to system catalog
   ghdeb catalog delete <name>           Remove entry from system catalog
@@ -925,8 +926,27 @@ func cmdCatalogAdd(args []string) error {
 		}
 	}
 
+	// 添加前校验：GitHub 条目必须提供当前架构的 .deb，否则不允许添加
+	if entry.Repo != "" {
+		owner, repo, perr := gh.ParseRepo(entry.Repo)
+		if perr != nil {
+			return fmt.Errorf("添加失败: 无效的仓库格式 %s", entry.Repo)
+		}
+		has, vErr := checkRepoDeb(owner, repo)
+		if vErr != nil {
+			return fmt.Errorf("添加失败: 校验 %s 失败: %w", entry.Repo, vErr)
+		}
+		if !has {
+			archName := T("当前架构", "current arch")
+			if arch, aErr := deb.DetectArch(); aErr == nil {
+				archName = arch.DpkgArch
+			}
+			return fmt.Errorf("添加失败: %s 最新 Release 未提供 %s 架构的 .deb 包", entry.Repo, archName)
+		}
+	}
+
 	if err := addToSystemCatalog(name, &entry); err != nil {
-		return err
+		return fmt.Errorf("添加失败: %w", err)
 	}
 
 	fmt.Printf(T("✅ 已添加 %s 到系统目录 (%s)\n", "✅ Added %s to system catalog (%s)\n"), name, catalog.SystemCatalogPath())
@@ -1531,7 +1551,7 @@ func cmdList(args []string) error {
 		}
 	}
 
-	// 加载 catalog（纯本地，不访问 GitHub）
+	// 加载 catalog（纯本地）
 	cat, err := catalog.Load()
 	if err != nil {
 		return fmt.Errorf("加载目录失败: %w", err)
@@ -1544,22 +1564,77 @@ func cmdList(args []string) error {
 	}
 
 	st, _ := state.Load()
-
 	names := cat.SortedNames()
+	client := gh.NewClient()
+
+	// 收集需要实时查询最新版本的仓库（有 repo 且缓存未命中 24h TTL）
+	type task struct{ owner, repo string }
+	var tasks []task
+	latestVer := make(map[string]string) // key = "owner/repo"
+	for _, name := range names {
+		entry := entries[name]
+		if entry.Repo == "" {
+			continue
+		}
+		owner, repo, perr := gh.ParseRepo(entry.Repo)
+		if perr != nil {
+			continue
+		}
+		if v := client.GetCachedRelease(owner, repo); v != "" {
+			latestVer[owner+"/"+repo] = v
+		} else {
+			tasks = append(tasks, task{owner, repo})
+		}
+	}
+
+	// 并发查询未命中缓存的仓库，避免逐个串行拖慢 list
+	if len(tasks) > 0 {
+		var wg sync.WaitGroup
+		var mu sync.Mutex
+		sem := make(chan struct{}, 8) // 限流，避免触发 GitHub API 限流
+		for _, t := range tasks {
+			wg.Add(1)
+			go func(t task) {
+				defer wg.Done()
+				sem <- struct{}{}
+				defer func() { <-sem }()
+				rel, relErr := client.GetLatestRelease(t.owner, t.repo)
+				if relErr != nil {
+					return // 网络/API 错误或无常稳定版：跳过，展示 "-"
+				}
+				mu.Lock()
+				latestVer[t.owner+"/"+t.repo] = rel.TagName
+				mu.Unlock()
+			}(t)
+		}
+		wg.Wait()
+		// 统一回填 24h 缓存（主协程串行写入，避免并发写文件竞态）
+		for key, v := range latestVer {
+			parts := strings.SplitN(key, "/", 2)
+			if len(parts) == 2 {
+				client.SetCachedRelease(parts[0], parts[1], v)
+			}
+		}
+	}
 
 	// JSON 输出结构
 	type listPkg struct {
-		Name      string `json:"name"`
-		Repo      string `json:"repo"`
-		URL       string `json:"url,omitempty"`
-		Summary   string `json:"summary,omitempty"`
-		Installed bool   `json:"installed"`
+		Name             string `json:"name"`
+		Repo             string `json:"repo"`
+		URL              string `json:"url,omitempty"`
+		Summary          string `json:"summary,omitempty"`
+		Installed        bool   `json:"installed"`
+		InstalledVersion string `json:"installed_version,omitempty"`
+		LatestVersion    string `json:"latest_version,omitempty"`
+		Upgradeable      bool   `json:"upgradeable"`
 	}
 	var jsonPkgs []listPkg
 
 	if !jsonOutput {
-		fmt.Printf("%-20s %-30s %s\n", T("名称", "Name"), T("仓库/URL", "Repo/URL"), T("简介", "Summary"))
-		fmt.Println(strings.Repeat("-", 70))
+		fmt.Printf("%-20s %-25s %-12s %-12s %s\n",
+			T("名称", "Name"), T("仓库/URL", "Repo/URL"),
+			T("已装版本", "Installed"), T("最新版本", "Latest"), T("状态", "Status"))
+		fmt.Println(strings.Repeat("-", 80))
 	}
 
 	for _, name := range names {
@@ -1567,30 +1642,60 @@ func cmdList(args []string) error {
 
 		repoOrURL := entry.Repo
 		if repoOrURL == "" {
-			repoOrURL = truncate(entry.URL, 28)
+			repoOrURL = truncate(entry.URL, 23)
 		}
 
-		// 检查安装状态
+		// 已装版本：来自本地 state + dpkg 实际查询
 		installed := false
+		installedVer := ""
 		if st != nil && entry.Repo != "" {
 			rec := st.Get(entry.Repo)
 			if rec != nil && !rec.Removed {
 				installed = true
+				rec.RefreshSystemInfo(rec.PkgName)
+				installedVer = rec.SystemVersion
 			}
 		}
 
-		summary := truncate(entry.Summary, 40)
+		// 最新版本：优先 24h 缓存，未命中走并发查询结果
+		latest := ""
+		if entry.Repo != "" {
+			owner, repo, perr := gh.ParseRepo(entry.Repo)
+			if perr == nil {
+				latest = latestVer[owner+"/"+repo]
+			}
+		}
+
+		// 状态：未装 / 可升级 / 已装
+		upgradeable := installed && installedVer != "" && latest != "" &&
+			compareVersion(installedVer, latest) < 0
+		status := ""
+		switch {
+		case !installed:
+			status = T("未装", "not installed")
+		case upgradeable:
+			status = "⬆️ " + T("可升级", "upgradeable")
+		default:
+			status = "✅"
+		}
+
 		if jsonOutput {
 			jsonPkgs = append(jsonPkgs, listPkg{
 				Name: name, Repo: entry.Repo, URL: entry.URL,
-				Summary: entry.Summary, Installed: installed,
+				Summary: truncate(entry.Summary, 35), Installed: installed,
+				InstalledVersion: installedVer, LatestVersion: latest,
+				Upgradeable: upgradeable,
 			})
 		} else {
-			mark := ""
-			if installed {
-				mark = " ✅"
+			iv, lv := installedVer, latest
+			if iv == "" {
+				iv = "-"
 			}
-			fmt.Printf("%-20s %-30s %s%s\n", name, repoOrURL, summary, mark)
+			if lv == "" {
+				lv = "-"
+			}
+			fmt.Printf("%-20s %-25s %-12s %-12s %s\n",
+				name, truncate(repoOrURL, 23), iv, lv, status)
 		}
 	}
 
@@ -1598,7 +1703,8 @@ func cmdList(args []string) error {
 		jsonData, _ := json.MarshalIndent(jsonPkgs, "", "  ")
 		fmt.Println(string(jsonData))
 	} else {
-		fmt.Printf("\n共 %d 个条目\n", len(entries))
+		fmt.Println(strings.Repeat("-", 80))
+		fmt.Printf(T("共 %d 个条目\n", "Total %d entries\n"), len(names))
 	}
 	return nil
 }
