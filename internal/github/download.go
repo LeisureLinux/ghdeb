@@ -39,6 +39,8 @@ func (c *Client) checkRangeSupport(downloadURL string) (bool, int64, error) {
 		return false, 0, err
 	}
 	defer resp.Body.Close()
+	// 读完 body 使连接能被复用，避免连接泄漏
+	io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
 
 	// 206 表示支持 Range，200 表示不支持
 	if resp.StatusCode != http.StatusPartialContent && resp.StatusCode != http.StatusOK {

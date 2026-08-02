@@ -2,6 +2,7 @@
 package github
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -69,6 +70,27 @@ func getGhCliToken() string {
 	return strings.TrimSpace(string(output))
 }
 
+// newTransport 构建下载/API 传输层。
+// 关键点：显式禁用 HTTP/2（TLSNextProto 置为非 nil 空 map）。
+// 在走代理 + GitHub release-assets 场景下，HTTP/2 over CONNECT 隧道
+// 容易卡住响应头（http2: timeout awaiting response headers），
+// 强制 HTTP/1.1 后下载稳定得多。
+func newTransport() *http.Transport {
+	return &http.Transport{
+		Proxy: getProxyFunc(), // 统一代理：环境变量 + 配置文件
+		// 仅设置连接/响应头超时，不设全局超时，避免大文件被固定超时卡死。
+		// 慢代理（如 wpad.lan:8888）首次建连可达 8~15s，超时值需放宽避免误杀。
+		ResponseHeaderTimeout: 60 * time.Second,
+		TLSHandshakeTimeout:   30 * time.Second,
+		IdleConnTimeout:       90 * time.Second,
+		MaxIdleConns:          32,
+		MaxIdleConnsPerHost:   16,
+		// 禁用 HTTP/2，强制 HTTP/1.1
+		ForceAttemptHTTP2: false,
+		TLSNextProto:      make(map[string]func(string, *tls.Conn) http.RoundTripper),
+	}
+}
+
 // NewClient 创建客户端，自动从参数或环境变量获取 token
 func NewClient() *Client {
 	token := os.Getenv("GITHUB_TOKEN")
@@ -79,22 +101,18 @@ func NewClient() *Client {
 		// 尝试从 gh CLI 获取 token
 		token = getGhCliToken()
 	}
+	// API 与下载共用一套禁用了 HTTP/2 的传输层，保证代理环境下连接稳定
+	transport := newTransport()
 	return &Client{
 		// API 客户端：30s 全局超时（JSON 响应很小）
 		apiClient: &http.Client{
-			Timeout: apiTimeout,
-			Transport: &http.Transport{
-				Proxy: getProxyFunc(),
-			},
+			Timeout:   apiTimeout,
+			Transport: transport,
 		},
 		// 下载客户端：仅设置连接/响应头超时，不设全局超时
 		// 这样大文件下载不会被固定超时卡死
 		downloadClient: &http.Client{
-			Transport: &http.Transport{
-				Proxy:                 http.ProxyFromEnvironment,
-				ResponseHeaderTimeout: 30 * time.Second,
-				TLSHandshakeTimeout:   10 * time.Second,
-			},
+			Transport: transport,
 		},
 		token: token,
 	}
