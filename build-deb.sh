@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-VERSION="0.6.8"
+VERSION="0.7.0"
 
 # 支持的架构映射: go arch -> dpkg arch
 declare -A ARCH_MAP=(
@@ -37,12 +37,14 @@ GOOS=linux GOARCH="${TARGET_GOARCH}" go build -ldflags="-s -w" -o dist/ghdeb ./c
 echo "📁 创建包目录结构..."
 mkdir -p ${PKG_DIR}/DEBIAN
 mkdir -p ${PKG_DIR}/usr/bin
+mkdir -p ${PKG_DIR}/etc/ghdeb
+mkdir -p ${PKG_DIR}/var/cache/ghdeb
 mkdir -p ${PKG_DIR}/usr/share/man/man1
 mkdir -p ${PKG_DIR}/usr/share/man/zh_CN/man1
 mkdir -p ${PKG_DIR}/usr/share/bash-completion/completions
 mkdir -p ${PKG_DIR}/usr/share/zsh/site-functions
 mkdir -p ${PKG_DIR}/usr/share/fish/vendor_completions.d
-mkdir -p ${PKG_DIR}/usr/share/ghdeb
+mkdir -p ${PKG_DIR}/usr/share/ghdeb/hooks
 
 # 复制二进制
 cp dist/ghdeb ${PKG_DIR}/usr/bin/ghdeb
@@ -68,12 +70,22 @@ chmod 644 ${PKG_DIR}/usr/share/zsh/site-functions/_ghdeb
 cp completion/ghdeb.fish ${PKG_DIR}/usr/share/fish/vendor_completions.d/_ghdeb
 chmod 644 ${PKG_DIR}/usr/share/fish/vendor_completions.d/_ghdeb
 
-# 包目录 (catalog.toml)
-cp catalog/catalog.toml ${PKG_DIR}/usr/share/ghdeb/catalog.toml
-chmod 644 ${PKG_DIR}/usr/share/ghdeb/catalog.toml
+# 包目录 (catalog.toml) - 安装到 /etc/ghdeb
+cp catalog/catalog.toml ${PKG_DIR}/etc/ghdeb/catalog.toml
+chmod 644 ${PKG_DIR}/etc/ghdeb/catalog.toml
+
+# 安装 dpkg hook 脚本
+cp debian/hooks_template/remove-monitor.sh ${PKG_DIR}/usr/share/ghdeb/hooks/remove-monitor.sh
+chmod 755 ${PKG_DIR}/usr/share/ghdeb/hooks/remove-monitor.sh
 
 # 生成控制文件（替换 Architecture 字段）
 sed "s/^Architecture:.*/Architecture: ${TARGET_ARCH}/" debian/control > ${PKG_DIR}/DEBIAN/control
+
+# 复制 postinst/prerm 并设置权限
+cp debian/postinst ${PKG_DIR}/DEBIAN/postinst
+chmod 755 ${PKG_DIR}/DEBIAN/postinst
+cp debian/prerm ${PKG_DIR}/DEBIAN/prerm
+chmod 755 ${PKG_DIR}/DEBIAN/prerm
 
 # 构建 .deb 包
 echo "📦 打包 .deb [${TARGET_ARCH}]..."

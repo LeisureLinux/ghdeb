@@ -4,6 +4,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/BurntSushi/toml"
 	"os"
 	"sort"
 	"os/exec"
@@ -18,7 +19,7 @@ import (
 	"github.com/leisurelinux/ghdeb/internal/state"
 )
 
-const version = "0.6.8"
+const version = "0.7.0"
 
 func main() {
 	// 检查是否使用 --json，如果是则不打印 banner
@@ -815,68 +816,6 @@ func cmdShow(args []string) error {
 
 
 
-// cmdCatalogCleanup 清理用户目录中和系统目录重复的条目
-func cmdCatalogCleanup(args []string) error {
-	// 加载系统目录
-	sysCat, err := catalog.LoadSystemCatalog()
-	if err != nil {
-		return fmt.Errorf("加载系统目录失败: %w", err)
-	}
-
-	// 加载用户目录
-	userEntries, err := catalog.LoadUserCatalog()
-	if err != nil {
-		return fmt.Errorf("加载用户目录失败: %w", err)
-	}
-
-	if len(userEntries) == 0 {
-		fmt.Println("用户目录为空，无需清理")
-		return nil
-	}
-
-	// 找出重复的条目
-	var duplicates []string
-	for name, userEntry := range userEntries {
-		if sysEntry, exists := sysCat.Packages[name]; exists {
-			// 比较是否完全相同
-			if userEntry.Repo == sysEntry.Repo &&
-				userEntry.PrettyName == sysEntry.PrettyName &&
-				userEntry.Website == sysEntry.Website &&
-				userEntry.Summary == sysEntry.Summary {
-				duplicates = append(duplicates, name)
-			}
-		}
-	}
-
-	if len(duplicates) == 0 {
-		fmt.Println("没有发现重复的条目")
-		return nil
-	}
-
-	fmt.Printf("发现 %d 个重复的条目：\n", len(duplicates))
-	sort.Strings(duplicates)
-	for _, name := range duplicates {
-		fmt.Printf("  - %s\n", name)
-	}
-
-	// 删除重复条目
-	for _, name := range duplicates {
-		delete(userEntries, name)
-	}
-
-	// 保存用户目录
-	userCat := &catalog.Catalog{Packages: make(map[string]*catalog.CatalogEntry)}
-	for name, entry := range userEntries {
-		e := entry
-		userCat.Packages[name] = &e
-	}
-	if err := userCat.SaveUserCatalog(); err != nil {
-		return fmt.Errorf("保存用户目录失败: %w", err)
-	}
-
-	fmt.Printf("\n已清理 %d 个重复条目\n", len(duplicates))
-	return nil
-}
 // --- catalog ---
 
 func cmdCatalog(args []string) error {
@@ -898,10 +837,8 @@ func cmdCatalog(args []string) error {
 		return cmdCatalogAdd(subargs)
 	case "delete", "del", "rm":
 		return cmdCatalogDelete(subargs)
-	case "cleanup":
-		return cmdCatalogCleanup(subargs)
 	default:
-		return fmt.Errorf("未知子命令: %s（可用: list, show, search, add, delete, cleanup）", subcmd)
+		return fmt.Errorf("未知子命令: %s（可用: list, show, search, add, delete）", subcmd)
 	}
 }
 
@@ -917,21 +854,14 @@ func cmdCatalogList(args []string) error {
 		return nil
 	}
 
-	// 加载用户目录判断来源
-	userEntries, _ := catalog.LoadUserCatalog()
-
 	st, _ := state.Load()
 
 	names := cat.SortedNames()
-	fmt.Printf("%-20s %-30s %-8s %s\n", T("名称", "Name"), T("仓库/URL", "Repo/URL"), T("来源", "Source"), T("简介", "Summary"))
-	fmt.Println(strings.Repeat("-", 90))
+	fmt.Printf("%-20s %-30s %s\n", T("名称", "Name"), T("仓库/URL", "Repo/URL"), T("简介", "Summary"))
+	fmt.Println(strings.Repeat("-", 70))
 
 	for _, name := range names {
 		entry := entries[name]
-		source := "system"
-		if _, ok := userEntries[name]; ok {
-			source = "user"
-		}
 
 		repoOrURL := entry.Repo
 		if repoOrURL == "" {
@@ -947,8 +877,8 @@ func cmdCatalogList(args []string) error {
 			}
 		}
 
-		summary := truncate(entry.Summary, 35)
-		fmt.Printf("%-20s %-30s %-8s %s%s\n", name, repoOrURL, source, summary, installed)
+		summary := truncate(entry.Summary, 40)
+		fmt.Printf("%-20s %-30s %s%s\n", name, repoOrURL, summary, installed)
 	}
 
 	fmt.Printf("\n共 %d 个条目\n", len(entries))
@@ -971,17 +901,10 @@ func cmdCatalogShow(args []string) error {
 		return fmt.Errorf("目录中未找到 %s", name)
 	}
 
-	// 判断来源
-	userEntries, _ := catalog.LoadUserCatalog()
-	source := "系统目录 (/usr/share/ghdeb/catalog.toml)"
-	if _, ok := userEntries[name]; ok {
-		source = "用户目录 (~/.config/ghdeb/catalog.toml)"
-	}
-
+	fmt.Println(strings.Repeat("─", 50))
+	fmt.Printf("配置路径: %s\n", catalog.SystemCatalogPath())
 	fmt.Println(strings.Repeat("─", 50))
 	fmt.Print(catalog.FormatEntry(name, entry))
-	fmt.Printf("来源: %s\n", source)
-	fmt.Println(strings.Repeat("─", 50))
 	return nil
 }
 
@@ -1037,11 +960,11 @@ func cmdCatalogAdd(args []string) error {
 		}
 	}
 
-	if err := catalog.AddToUserCatalog(name, &entry); err != nil {
+	if err := addToSystemCatalog(name, &entry); err != nil {
 		return err
 	}
 
-	fmt.Printf(T("✅ 已添加 %s 到用户目录\n", "✅ Added %s to user catalog\n"), name)
+	fmt.Printf(T("✅ 已添加 %s 到系统目录 (%s)\n", "✅ Added %s to system catalog (%s)\n"), name, catalog.SystemCatalogPath())
 	if entry.Repo != "" {
 		fmt.Printf("   repo: %s\n", entry.Repo)
 	}
@@ -1057,11 +980,113 @@ func cmdCatalogDelete(args []string) error {
 	}
 
 	name := args[0]
-	if err := catalog.DeleteFromUserCatalog(name); err != nil {
+	if err := removeFromSystemCatalog(name); err != nil {
 		return err
 	}
 
-	fmt.Printf(T("✅ 已从用户目录删除 %s\n", "✅ Deleted %s from user catalog\n"), name)
+	fmt.Printf(T("✅ 已从系统目录删除 %s\n", "✅ Deleted %s from system catalog\n"), name)
+	return nil
+}
+
+// addToSystemCatalog 将条目添加到系统级目录
+func addToSystemCatalog(name string, entry *catalog.CatalogEntry) error {
+	if err := catalog.ValidateCatalogName(name); err != nil {
+		return err
+	}
+	if err := catalog.ValidateCatalogEntry(entry); err != nil {
+		return err
+	}
+
+	path := catalog.SystemCatalogPath()
+	
+	// 加载现有内容
+	entries := make(map[string]catalog.CatalogEntry)
+	if data, err := os.ReadFile(path); err == nil {
+		toml.Decode(string(data), &entries)
+	}
+	
+	// 检查是否已存在
+	if _, ok := entries[name]; ok {
+		return fmt.Errorf("条目 %s 已存在于 %s", name, path)
+	}
+	
+	entries[name] = *entry
+	
+	// 写入（需要 root 权限）
+	return writeSystemCatalog(path, entries)
+}
+
+// removeFromSystemCatalog 从系统级目录删除条目
+func removeFromSystemCatalog(name string) error {
+	path := catalog.SystemCatalogPath()
+	
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("系统目录不存在: %s", path)
+		}
+		return err
+	}
+	
+	entries := make(map[string]catalog.CatalogEntry)
+	toml.Decode(string(data), &entries)
+	
+	if _, ok := entries[name]; !ok {
+		return fmt.Errorf("系统目录中未找到 %s", name)
+	}
+	
+	delete(entries, name)
+	return writeSystemCatalog(path, entries)
+}
+
+// writeSystemCatalog 写入系统级目录文件
+func writeSystemCatalog(path string, entries map[string]catalog.CatalogEntry) error {
+	// 确保目录存在
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("创建目录失败: %w", err)
+	}
+	
+	var sb strings.Builder
+	sb.WriteString("# ghdeb 包目录 (Known Packages Catalog)\n")
+	sb.WriteString("# 路径: " + path + "\n#\n")
+	sb.WriteString("# 编辑此文件需 root 权限: sudo vim /etc/ghdeb/catalog.toml\n\n")
+	
+	// 按名称排序输出
+	names := make([]string, 0, len(entries))
+	for name := range entries {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	
+	for _, name := range names {
+		entry := entries[name]
+		sb.WriteString(fmt.Sprintf("[%s]\n", name))
+		if entry.Repo != "" {
+			sb.WriteString(fmt.Sprintf("repo = %q\n", entry.Repo))
+		}
+		if entry.PrettyName != "" {
+			sb.WriteString(fmt.Sprintf("pretty_name = %q\n", entry.PrettyName))
+		}
+		if entry.Website != "" {
+			sb.WriteString(fmt.Sprintf("website = %q\n", entry.Website))
+		}
+		if entry.Summary != "" {
+			sb.WriteString(fmt.Sprintf("summary = %q\n", entry.Summary))
+		}
+		if entry.URL != "" {
+			sb.WriteString(fmt.Sprintf("url = %q\n", entry.URL))
+		}
+		if entry.GPGKey != "" {
+			sb.WriteString(fmt.Sprintf("gpg_key = %q\n", entry.GPGKey))
+		}
+		sb.WriteString("\n")
+	}
+	
+	if err := os.WriteFile(path, []byte(sb.String()), 0644); err != nil {
+		return fmt.Errorf("写入失败 (可能需要 sudo 权限): %w", err)
+	}
+	
 	return nil
 }
 

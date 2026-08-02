@@ -1,0 +1,32 @@
+#!/bin/bash
+set -e
+
+# ghdeb postinst 脚本
+# 在包安装或升级后执行
+
+# 创建必要的目录
+mkdir -p /etc/ghdeb
+mkdir -p /var/cache/ghdeb
+mkdir -p /usr/share/man/man1
+mkdir -p /usr/share/man/zh_CN/man1
+mkdir -p /usr/share/bash-completion/completions
+mkdir -p /usr/share/zsh/site-functions
+mkdir -p /usr/share/fish/vendor_completions.d
+
+# 确保状态文件存在（首次安装）
+if [ ! -f /var/cache/ghdeb/installed.json ]; then
+    echo '{"packages":{}}' > /var/cache/ghdeb/installed.json
+fi
+
+# 安装 dpkg hook 脚本用于监控软件包删除
+cat > /etc/apt/apt.conf.d/99ghdeb-hook << 'HOOK_EOF'
+# ghdeb dpkg hook - monitor package removal
+Dpkg::Post-Invoke { "/usr/share/ghdeb/hooks/remove-monitor.sh"; };
+HOOK_EOF
+
+echo "✅ ghdeb 安装完成"
+echo "   配置路径: /etc/ghdeb/catalog.toml"
+echo "   状态文件: /var/cache/ghdeb/installed.json"
+echo "   已安装 dpkg hook 用于自动跟踪包状态"
+
+exit 0

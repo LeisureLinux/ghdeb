@@ -53,9 +53,13 @@ type State struct {
 	Packages map[string]*PackageRecord `json:"packages"` // key = "owner/repo"
 }
 
+func defaultStatePath() string {
+	return "/var/cache/ghdeb/installed.json"
+}
+
 // Load 从磁盘加载状态
 func Load() (*State, error) {
-	path := statePath()
+	path := defaultStatePath()
 	s := &State{path: path, Packages: make(map[string]*PackageRecord)}
 
 	data, err := os.ReadFile(path)
@@ -135,7 +139,7 @@ func (s *State) SetUpgrade(repo, version, debFile, debPath, releaseURL string) {
 		DebFile:     debFile,
 		DebPath:     debPath,
 		ReleaseURL:  releaseURL,
-		Timestamp:   now,
+		Timestamp:  now,
 	})
 }
 
@@ -226,13 +230,4 @@ func (r *PackageRecord) RefreshSystemInfo(debPkgName string) {
 	if path := QueryInstalledPath(debPkgName); path != "" {
 		r.InstalledPath = path
 	}
-}
-
-func statePath() string {
-	dir := os.Getenv("XDG_STATE_HOME")
-	if dir == "" {
-		home, _ := os.UserHomeDir()
-		dir = filepath.Join(home, ".local", "state")
-	}
-	return filepath.Join(dir, "ghdeb", "installed.json")
 }
