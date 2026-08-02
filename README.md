@@ -113,15 +113,20 @@ ghdeb upgrade rustdesk
 
 ## How to find unmanaged GitHub .deb packages on my system?
 
-```bash
-# Scan for orphan packages (installed .deb with no apt source)
-ghdeb scan
+ghdeb relies on `catalog init` + `catalog clean` to build and maintain the package catalog:
 
-# Deep scan: also fetch Homepage URLs to find GitHub links
-ghdeb scan --deep
+```bash
+# Build the catalog once (scan installed apt GitHub Homepages, no .deb check)
+ghdeb catalog init
+
+# Clean a single entry without a matching-arch .deb
+ghdeb catalog clean <name>
+
+# Clean the whole catalog (remove every entry without a matching-arch .deb)
+ghdeb catalog clean --all
 ```
 
-ghdeb discovers `.deb` packages installed on your system that have no corresponding apt repository — these are "orphan packages" that won't receive updates through `apt upgrade`.
+`catalog init` discovers `.deb` packages installed on your system whose Homepage points to GitHub; `catalog clean` then removes any entries whose latest Release lacks a `.deb` for your architecture.
 
 ## How to view package information?
 

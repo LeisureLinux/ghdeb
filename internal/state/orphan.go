@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
-	"sort"
 	"strings"
 )
 
@@ -269,84 +268,4 @@ func (s *State) GetByPkgName(pkgName string) *PackageRecord {
 		}
 	}
 	return nil
-}
-
-// AptGitHubPackage apt 安装的 GitHub 包信息
-type AptGitHubPackage struct {
-	PkgName   string // deb 包名
-	Version   string
-	Owner     string // GitHub owner
-	Repo      string // GitHub repo
-	Homepage  string
-	InCatalog bool // 是否已在 catalog 中
-}
-
-// ScanAptGitHubPackages 扫描所有 apt 已安装包，找出 Homepage 指向 github.com 的
-func ScanAptGitHubPackages(catalogRepos map[string]bool, pkgFilter string) ([]AptGitHubPackage, error) {
-	// 解析所有已安装的包
-	allPkgs, err := parseDpkgStatus()
-	if err != nil {
-		return nil, err
-	}
-
-	githubRepoRegex := regexp.MustCompile(`github\.com/([a-zA-Z0-9_-]+)/([a-zA-Z0-9_-]+)`)
-
-	var ghPkgs []AptGitHubPackage
-	seen := make(map[string]bool) // 避免重复
-
-	for _, pkg := range allPkgs {
-		// 若指定了目标包，仅检测该包
-		if pkgFilter != "" && pkg.Name != pkgFilter {
-			continue
-		}
-		// 只处理已安装的包
-		if !strings.Contains(pkg.Status, "installed") || strings.Contains(pkg.Status, "not-installed") {
-			continue
-		}
-
-		if pkg.Homepage == "" {
-			continue
-		}
-
-		matches := githubRepoRegex.FindStringSubmatch(pkg.Homepage)
-		if matches == nil {
-			continue
-		}
-
-		owner := matches[1]
-		repo := matches[2]
-		repoKey := strings.ToLower(owner + "/" + repo)
-
-		// 跳过重复的 repo（同一个 repo 可能被多个 deb 包安装）
-		if seen[repoKey] {
-			continue
-		}
-		seen[repoKey] = true
-
-		// 跳过 github.com 自身的元链接（如 gh-pages 等）
-		if owner == "github" || repo == "github" {
-			continue
-		}
-
-		// 清理 repo 名称（去除 .git 后缀、大小写规范化）
-		repo = strings.TrimSuffix(repo, ".git")
-
-		inCatalog := catalogRepos[strings.ToLower(owner+"/"+repo)]
-
-		ghPkgs = append(ghPkgs, AptGitHubPackage{
-			PkgName:   pkg.Name,
-			Version:   pkg.Version,
-			Owner:     owner,
-			Repo:      repo,
-			Homepage:  pkg.Homepage,
-			InCatalog: inCatalog,
-		})
-	}
-
-	// 按包名排序
-	sort.Slice(ghPkgs, func(i, j int) bool {
-		return ghPkgs[i].PkgName < ghPkgs[j].PkgName
-	})
-
-	return ghPkgs, nil
 }
