@@ -99,7 +99,6 @@ func printUsage() {
   ghdeb reinstall <pkg>                 重新安装指定包
   ghdeb search <pattern>                在包目录中搜索
   ghdeb list [--json]                 列出所有已管理的包(纯本地)
-  ghdeb catalog init                    一次性建立目录（扫描已装包的 GitHub Homepage，不校验 .deb）
   ghdeb catalog list                    列出包目录中所有条目
   ghdeb catalog show <name>             显示目录条目详情
   ghdeb catalog add <name> --repo <owner/repo>  添加条目到系统目录
@@ -140,7 +139,6 @@ Usage:
   ghdeb reinstall <pkg>                 Reinstall a package
   ghdeb search <pattern>                Search in package catalog
   ghdeb list [--json]                  List managed packages (local only)
-  ghdeb catalog init                    Build catalog once (scan installed GitHub Homepages, no .deb check)
   ghdeb catalog list                    List all catalog entries
   ghdeb catalog show <name>             Show catalog entry details
   ghdeb catalog add <name> --repo <owner/repo>  Add entry to system catalog
@@ -832,7 +830,7 @@ func cmdShow(args []string) error {
 
 func cmdCatalog(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("请指定子命令: init, list, show, search, add, modify, delete, validate")
+		return fmt.Errorf("请指定子命令: list, show, search, add, modify, delete, validate")
 	}
 
 	subcmd := args[0]
@@ -845,8 +843,6 @@ func cmdCatalog(args []string) error {
 		return cmdCatalogShow(subargs)
 	case "search":
 		return cmdSearch(subargs) // 复用 search 逻辑
-	case "init":
-		return cmdCatalogInit(subargs)
 	case "add":
 		return cmdCatalogAdd(subargs)
 	case "delete", "del", "rm":
@@ -856,7 +852,7 @@ func cmdCatalog(args []string) error {
 	case "validate":
 		return cmdCatalogValidate(subargs)
 	default:
-		return fmt.Errorf("未知子命令: %s（可用: init, list, show, search, add, modify, delete, validate）", subcmd)
+		return fmt.Errorf("未知子命令: %s（可用: list, show, search, add, modify, delete, validate）", subcmd)
 	}
 }
 
@@ -924,106 +920,6 @@ func cmdCatalogShow(args []string) error {
 	fmt.Println(strings.Repeat("─", 50))
 	fmt.Print(catalog.FormatEntry(name, entry))
 	return nil
-}
-
-// cmdCatalogInit 一次性建立系统目录：枚举所有已装包中 Homepage 指向 GitHub 的仓库，
-// 全部写入 catalog.toml（不做 .deb 架构校验）。已存在的条目跳过。
-func cmdCatalogInit(args []string) error {
-	fmt.Println(T("🔍 扫描已装包的 GitHub Homepage，初始化 catalog ...",
-		"🔍 Scanning installed packages' GitHub Homepage to init catalog ..."))
-
-	pkgs, err := state.ScanInstalledGitHubReposQuick("")
-	if err != nil {
-		return fmt.Errorf("扫描已装包失败: %w", err)
-	}
-	if len(pkgs) == 0 {
-		fmt.Println(T("未发现 Homepage 指向 GitHub 的已装包", "No installed package with GitHub Homepage found"))
-		return nil
-	}
-
-	// 去重并按仓库整理
-	repoPkgs := make(map[string]*state.InstalledGitHubPkg)
-	var repoKeys []string
-	for i := range pkgs {
-		p := pkgs[i]
-		k := strings.ToLower(p.Owner + "/" + p.Repo)
-		if _, ok := repoPkgs[k]; !ok {
-			repoPkgs[k] = &pkgs[i]
-			repoKeys = append(repoKeys, k)
-		}
-	}
-
-	// 全新重建：本机已装 GitHub 包的完整清单（含 ghdeb 置顶）
-	path := catalog.SystemCatalogPath()
-	entries := map[string]catalog.CatalogEntry{
-		"ghdeb": {
-			Repo:       "LeisureLinux/ghdeb",
-			PrettyName: "ghdeb",
-			Website:    "https://github.com/LeisureLinux/ghdeb",
-			Summary:    "管理从 GitHub Releases 下载的 .deb 包",
-		},
-	}
-
-	// 若 catalog.toml 已存在且较大，需用户确认才覆盖（默认 No）
-	if fi, sErr := os.Stat(path); sErr == nil && fi.Size() > 10 {
-		if !confirmOverwrite() {
-			fmt.Println(T("已取消：保留现有 catalog.toml，未做任何更改",
-				"Cancelled: existing catalog.toml kept, no changes made"))
-			return nil
-		}
-	}
-
-	added := 0
-	for _, key := range repoKeys {
-		p := repoPkgs[key]
-		name := strings.ToLower(p.Repo)
-		if name == "ghdeb" {
-			continue // ghdeb 自身已置顶
-		}
-		entries[name] = catalog.CatalogEntry{
-			Repo:       p.Owner + "/" + p.Repo,
-			PrettyName: p.Repo,
-			Website:    fmt.Sprintf("https://github.com/%s/%s", p.Owner, p.Repo),
-			Summary:    fmt.Sprintf("Auto-discovered from installed package: %s", p.PkgName),
-		}
-		added++
-	}
-
-	if err := writeSystemCatalog(path, entries, "ghdeb"); err != nil {
-		return fmt.Errorf("写入 catalog 失败: %w", err)
-	}
-
-	// 合并到 state（供 list/upgrade 映射已装版本）
-	if len(pkgs) > 0 {
-		st, stErr := state.Load()
-		if stErr == nil {
-			if n := state.MergeInstalledToState(st, pkgs); n > 0 {
-				if err := st.Save(); err != nil {
-					return fmt.Errorf("保存状态失败: %w", err)
-				}
-			}
-		}
-	}
-
-	fmt.Println()
-	fmt.Println(T("catalog 初始化完成（未校验 GitHub Releases 的 .deb 架构）:",
-		"Catalog initialized (no GitHub Releases .deb arch check):"))
-	fmt.Printf(T("  ✅ 已加入: %d\n", "  ✅ Added: %d\n"), added)
-	fmt.Printf(T("  配置路径: %s\n", "  Config path: %s\n"), path)
-	return nil
-}
-
-// confirmOverwrite 询问用户是否覆盖现有 catalog，默认 No。
-// 非交互（stdin EOF/空输入）时返回 false。
-func confirmOverwrite() bool {
-	fmt.Print(T("⚠️  这会用本机已装（Homepage 为 GitHub）的包清单覆盖现有 catalog.toml？（y/N） ",
-		"⚠️  This will overwrite catalog.toml with the list of locally installed GitHub packages? (y/N) "))
-	var ans string
-	if _, err := fmt.Scanln(&ans); err != nil {
-		return false
-	}
-	ans = strings.TrimSpace(ans)
-	return strings.EqualFold(ans, "y") || strings.EqualFold(ans, "yes")
 }
 
 func cmdCatalogAdd(args []string) error {
@@ -1362,7 +1258,7 @@ func writeSystemCatalog(path string, entries map[string]catalog.CatalogEntry, fi
 	var sb strings.Builder
 	sb.WriteString("# ghdeb 包目录 (Known Packages Catalog)\n")
 	sb.WriteString("# 路径: " + path + "\n#\n")
-	sb.WriteString("# 维护本目录可使用命令：ghdeb catalog init, list, show, search, add, modify, delete, validate\n")
+	sb.WriteString("# 维护本目录可使用命令：ghdeb catalog list, show, search, add, modify, delete, validate\n")
 	// 仅维护首次初始化时间：文件已记录则保留原值，否则写当前时间
 	initAt := time.Now().Format("2006-01-02 15:04:05")
 	if data, rErr := os.ReadFile(path); rErr == nil {

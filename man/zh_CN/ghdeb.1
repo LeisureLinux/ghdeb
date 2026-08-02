@@ -54,11 +54,6 @@ ghdeb \- 管理从 GitHub Releases 下载的 .deb 包
 管理包目录。目录将短名称映射到 GitHub 仓库（或直接 .deb URL），
 用于短名称安装。
 .RS
-.TP
-.B ghdeb catalog init
-一次性建立系统目录：枚举所有已安装且 Homepage 指向 GitHub 的软件包，
-写入系统目录，不校验是否存在对应的 .deb。
-
 .B ghdeb catalog list
 列出目录中的所有条目。
 .TP
@@ -154,9 +149,7 @@ ghdeb \- 管理从 GitHub Releases 下载的 .deb 包
 .SH 目录系统
 包目录采用 TOML 格式，存放于系统路径
 .B /etc/ghdeb/catalog.toml
-，由
-.B ghdeb catalog init
-自动生成（扫描本机 Homepage 指向 GitHub 的已装 .deb 包）。
+，内置 curated 的 GitHub .deb 包列表。
 .PP
 目录条目格式：
 .EX
@@ -223,7 +216,7 @@ GitHub 个人访问令牌。将 API 速率限制从 60 次/小时（未认证）
 .SH 文件
 .TP
 .B /etc/ghdeb/catalog.toml
-系统包目录（由 catalog init 自动生成）。
+系统包目录（内置 curated 的 GitHub .deb 包列表）。
 .TP
 .B ~/.cache/ghdeb/releases.json
 Release 版本缓存（24 小时 TTL）。

@@ -3,7 +3,7 @@
 [![Release](https://img.shields.io/github/v/release/LeisureLinux/ghdeb)](https://github.com/LeisureLinux/ghdeb/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-**ghdeb** is a lightweight CLI tool that manages `.deb` packages downloaded from GitHub Releases — one command, no PPA, no manual download. A short-name catalog is auto-built from the GitHub-hosted packages already installed on your system.
+**ghdeb** is a lightweight CLI tool that manages `.deb` packages downloaded from GitHub Releases — one command, no PPA, no manual download. It ships with a curated list of known GitHub `.deb` packages for short-name installs.
 
 ```bash
 ghdeb install LeisureLinux/ghdeb      # install latest ghdeb
@@ -39,7 +39,7 @@ cd ghdeb && make build && sudo make install
 
 ## How to use the package catalog?
 
-ghdeb builds its catalog by scanning the `.deb` packages installed on your system whose Homepage points to GitHub (see `catalog init` below). You can then install by short name:
+ghdeb ships with a curated catalog of 50+ popular GitHub `.deb` packages. You can install them by short name:
 
 ```bash
 # Install by short name (mapped via catalog)
@@ -114,17 +114,11 @@ ghdeb upgrade LeisureLinux/ghdeb
 ghdeb upgrade rustdesk
 ```
 
-## How to find unmanaged GitHub .deb packages on my system?
+## How to maintain the package catalog?
 
-ghdeb relies on `catalog init` + `catalog validate` to build and maintain the package catalog:
+ghdeb uses the curated `catalog.toml` directly — it does not scan packages installed on your system. You can still maintain the catalog manually:
 
 ```bash
-# Build the catalog once (scan installed apt GitHub Homepages, no .deb check)
-# On first run it auto-generates /etc/ghdeb/catalog.toml;
-# if the file already exists (>10 bytes), it asks for confirmation before overwriting (default No).
-ghdeb catalog init
-
-# Clean a single entry without a matching-arch .deb
 # Change the GitHub repo behind a catalog entry
 ghdeb catalog modify <name> --repo owner/repo
 
@@ -135,7 +129,7 @@ ghdeb catalog validate <name>
 ghdeb catalog validate --all
 ```
 
-`catalog init` discovers `.deb` packages installed on your system whose Homepage points to GitHub; `catalog validate` then removes any entries whose latest Release lacks a `.deb` for your architecture. `catalog modify` lets you repoint an entry to a different GitHub repository.
+`catalog validate` removes any entry whose latest Release lacks a `.deb` for your architecture. `catalog modify` lets you repoint an entry to a different GitHub repository.
 
 ## How to view package information?
 
