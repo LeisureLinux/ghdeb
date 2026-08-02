@@ -1353,6 +1353,12 @@ func cmdScan(args []string) error {
 		return nil
 	}
 
+	// ========== 第三部分：目标为 owner/repo 时，校验 GitHub Releases 是否提供当前架构的 .deb ==========
+	// 若无则从 catalog.toml 删除该条目
+	if targetPkg != "" {
+		verifyScanRepoRelease(targetPkg)
+	}
+
 	fmt.Println(T("\n🔍 扫描 apt 已安装包的 GitHub Homepage...", "\n🔍 Scanning apt installed packages for GitHub Homepage..."))
 
 	// 加载 catalog，获取已有 repo 集合
@@ -1460,6 +1466,83 @@ func cmdScan(args []string) error {
 	}
 
 	return nil
+}
+
+// verifyScanRepoRelease 目标为 owner/repo 时，解析出仓库并校验其 Releases 是否提供当前架构的 .deb。
+// 若目标既不是合法 owner/repo 也不是 catalog 短名称，则视为普通 apt 包名并静默跳过。
+func verifyScanRepoRelease(input string) {
+	var owner, repo string
+
+	if strings.Contains(input, "/") {
+		// 直接是 owner/repo 格式
+		var err error
+		owner, repo, err = gh.ParseRepo(input)
+		if err != nil {
+			return // 不是合法 owner/repo，可能是普通包名，跳过
+		}
+	} else {
+		// 短名称：仅当 catalog 中存在时才视为仓库
+		cat, catErr := catalog.Load()
+		if catErr != nil {
+			return
+		}
+		entry := cat.Lookup(input)
+		if entry == nil || entry.IsDirectURL() {
+			return // 普通 apt 包名或直接 URL 来源，跳过
+		}
+		var err error
+		owner, repo, err = gh.ParseRepo(entry.Repo)
+		if err != nil {
+			return
+		}
+	}
+
+	verifyRepoHasDeb(owner, repo)
+}
+
+// verifyRepoHasDeb 查询最新 release 并检查是否存在匹配当前架构的 .deb。
+// 若无匹配 .deb，则从 catalog.toml 删除对应条目。
+func verifyRepoHasDeb(owner, repo string) {
+	repoKey := strings.ToLower(owner + "/" + repo)
+
+	arch, err := deb.DetectArch()
+	if err != nil {
+		fmt.Printf("⚠️  检测系统架构失败: %v\n", err)
+		return
+	}
+
+	fmt.Printf(T("🔍 校验 %s 的 GitHub Releases 是否提供 %s 架构的 .deb ...\n",
+		"🔍 Checking if %s GitHub Releases provides %s .deb ...\n"), repoKey, arch.DpkgArch)
+
+	client := gh.NewClient()
+	release, relErr := client.GetLatestRelease(owner, repo)
+	if relErr != nil {
+		fmt.Printf("⚠️  获取 %s 最新 release 失败: %v\n", repoKey, relErr)
+		return
+	}
+
+	result, _ := gh.FindAssetWithFallback(release, arch)
+	if result != nil && result.Asset != nil {
+		fmt.Printf(T("✅ %s 最新版本 %s 提供 %s 架构的 .deb: %s\n",
+			"✅ %s latest %s provides %s .deb: %s\n"),
+			repoKey, release.TagName, arch.DpkgArch, result.Asset.Name)
+		return
+	}
+
+	// 无匹配架构的 .deb：尝试从 catalog 删除该条目
+	fmt.Printf(T("⚠️  %s 最新版本 %s 没有 %s 架构的 .deb\n",
+		"⚠️  %s latest %s has no %s .deb\n"), repoKey, release.TagName, arch.DpkgArch)
+
+	delErr := removeFromSystemCatalog(repoKey)
+	if delErr == nil {
+		fmt.Println("该软件的 Github Releases 没有对应架构的 .deb，已从目录 catalog.toml 里删除")
+		return
+	}
+	if strings.Contains(delErr.Error(), "未找到") {
+		fmt.Println("该软件的 Github Releases 没有对应架构的 .deb（该仓库未在 catalog 中，无需删除）")
+		return
+	}
+	fmt.Printf("⚠️  删除 catalog 条目失败: %v\n", delErr)
 }
 
 // --- list ---
