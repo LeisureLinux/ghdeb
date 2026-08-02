@@ -1,14 +1,15 @@
 #!/bin/bash
 set -e
 
-VERSION="0.7.20"
+VERSION="0.7.21"
 
 # 支持的架构映射: go arch -> dpkg arch
 declare -A ARCH_MAP=(
     ["amd64"]="amd64"
-    ["arm64"]="arm64"
-    ["loong64"]="loong64"
-    ["riscv64"]="riscv64"
+    # 以下架构暂未稳定，先注释，待后续稳定后再加回
+    # ["arm64"]="arm64"
+    # ["loong64"]="loong64"
+    # ["riscv64"]="riscv64"
 )
 
 # 默认构建当前架构

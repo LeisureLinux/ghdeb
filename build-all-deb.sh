@@ -4,7 +4,9 @@ set -e
 echo "🔨 构建所有架构的 ghdeb .deb 包..."
 echo ""
 
-ARCHS=("amd64" "arm64" "loong64" "riscv64")
+# 以下架构暂未稳定，先注释，待后续稳定后再加回
+ARCHS=("amd64")
+# ARCHS=("amd64" "arm64" "loong64" "riscv64")
 FAILED=()
 
 for arch in "${ARCHS[@]}"; do

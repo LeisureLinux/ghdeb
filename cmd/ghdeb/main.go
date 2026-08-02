@@ -21,7 +21,7 @@ import (
 	"github.com/leisurelinux/ghdeb/internal/state"
 )
 
-const version = "0.7.20"
+const version = "0.7.21"
 
 func main() {
 	// 检查是否使用 --json，如果是则不打印 banner
@@ -1162,28 +1162,93 @@ func cmdCatalogClean(args []string) error {
 	}
 	sort.Strings(names)
 
+	// 操作前先备份目录文件：中途出错或文件损坏可回退到操作前完整状态
+	path := catalog.SystemCatalogPath()
+	backupPath := path + ".cleanbak"
+	if err := backupCatalogFile(path, backupPath); err != nil {
+		return fmt.Errorf("创建目录备份失败: %w", err)
+	}
+	fmt.Printf(T("📦 已备份目录到 %s（出错时将自动回退）\n",
+		"📦 Backed up catalog to %s (will auto-restore on error)\n"), backupPath)
+
+	// 加载当前目录内容，用于分批删除与写回
+	curData, rErr := os.ReadFile(path)
+	if rErr != nil {
+		return fmt.Errorf("读取目录失败: %w", rErr)
+	}
+	current := make(map[string]catalog.CatalogEntry)
+	toml.Decode(string(curData), &current)
+
 	toRemove := make(map[string]bool)
-	for _, k := range names {
-		e := candidates[k]
-		// ghdeb 自身永远保留
-		if k == "ghdeb" {
-			continue
+	skippedNet := 0
+	total := len(names)
+
+	// 成功标志：正常走完则删除备份，出错则回退备份
+	success := false
+	defer func() {
+		if success {
+			os.Remove(backupPath)
+			fmt.Println(T("✅ 已删除临时备份文件", "✅ Temporary backup removed"))
+		} else if restoreCatalogFile(backupPath, path) == nil {
+			fmt.Printf(T("⚠️  操作未完成，已从备份回退目录文件 %s\n",
+				"⚠️  Operation incomplete, catalog %s restored from backup\n"), path)
 		}
-		// 非 GitHub 直接 URL 条目无法校验 .deb，保留不动
-		if e.IsDirectURL() || e.Repo == "" {
-			continue
+	}()
+
+	// 分批处理：每处理一批（20 个）就写一次盘，降低中断损失
+	const batchSize = 20
+	processed := 0
+	for start := 0; start < total; start += batchSize {
+		end := start + batchSize
+		if end > total {
+			end = total
 		}
-		owner, repo, perr := gh.ParseRepo(e.Repo)
-		if perr != nil {
-			continue
+		batch := names[start:end]
+
+		for _, k := range batch {
+			e := candidates[k]
+			// ghdeb 自身永远保留
+			if k == "ghdeb" {
+				continue
+			}
+			// 非 GitHub 直接 URL 条目无法校验 .deb，保留不动
+			if e.IsDirectURL() || e.Repo == "" {
+				continue
+			}
+			owner, repo, perr := gh.ParseRepo(e.Repo)
+			if perr != nil {
+				continue
+			}
+			fmt.Printf("检查 %s（%s）...\n", k, e.Repo)
+			has, cErr := checkRepoDeb(owner, repo)
+			if cErr != nil {
+				// 网络/API 错误：保留该条目，跳过，避免误删
+				fmt.Printf("  🌐 网络/API 错误，跳过保留：%v\n", cErr)
+				skippedNet++
+				continue
+			}
+			if has {
+				fmt.Printf("  ✅ 最新 Release 提供 %s 架构的 .deb，保留\n", arch.DpkgArch)
+			} else {
+				fmt.Printf("  ⚠️  最新 Release 无 %s 架构的 .deb，将从目录删除\n", arch.DpkgArch)
+				toRemove[k] = true
+				delete(current, k)
+			}
 		}
-		fmt.Printf("检查 %s（%s）...\n", k, e.Repo)
-		if repoHasDeb(owner, repo) {
-			fmt.Printf("  ✅ 最新 Release 提供 %s 架构的 .deb，保留\n", arch.DpkgArch)
-		} else {
-			fmt.Printf("  ⚠️  最新 Release 无 %s 架构的 .deb，将从目录删除\n", arch.DpkgArch)
-			toRemove[k] = true
+		processed = end
+
+		// 每批写盘
+		if err := writeSystemCatalog(path, current, "ghdeb"); err != nil {
+			return fmt.Errorf("写入目录失败: %w", err)
 		}
+		fmt.Printf(T("  已处理 %d/%d 个条目并写盘（累计删除 %d 个）\n",
+			"  Processed %d/%d entries and flushed (%d removed so far)\n"),
+			processed, total, len(toRemove))
+	}
+
+	if skippedNet > 0 {
+		fmt.Printf(T("🌐 因网络/API 错误跳过 %d 个条目（已保留，可重跑 clean --all）\n",
+			"🌐 Skipped %d entries due to network/API errors (kept, re-run clean --all)\n"), skippedNet)
 	}
 
 	if len(toRemove) == 0 {
@@ -1192,28 +1257,14 @@ func cmdCatalogClean(args []string) error {
 		} else {
 			fmt.Println(T("✅ 该条目提供 .deb，无需清理", "✅ This entry provides .deb, nothing to clean"))
 		}
-		return nil
+	} else {
+		fmt.Printf(T("✅ 已从目录清理 %d 个无 .deb 的条目\n", "✅ Removed %d entries without .deb from catalog\n"), len(toRemove))
+		for k := range toRemove {
+			fmt.Printf("  - %s\n", k)
+		}
 	}
 
-	// 从目录中删除并写回
-	path := catalog.SystemCatalogPath()
-	data, rErr := os.ReadFile(path)
-	if rErr != nil {
-		return fmt.Errorf("读取目录失败: %w", rErr)
-	}
-	var current map[string]catalog.CatalogEntry
-	toml.Decode(string(data), &current)
-	for k := range toRemove {
-		delete(current, k)
-	}
-	if err := writeSystemCatalog(path, current, "ghdeb"); err != nil {
-		return fmt.Errorf("写入目录失败: %w", err)
-	}
-
-	fmt.Printf(T("✅ 已从目录清理 %d 个无 .deb 的条目\n", "✅ Removed %d entries without .deb from catalog\n"), len(toRemove))
-	for k := range toRemove {
-		fmt.Printf("  - %s\n", k)
-	}
+	success = true
 	return nil
 }
 
@@ -1492,20 +1543,56 @@ func cmdPurge(args []string) error {
 	return nil
 }
 
-// repoHasDeb 查询 GitHub 仓库最新 Release 是否提供当前架构的 .deb。
-// 返回 true 表示存在匹配的 .deb，ghdeb 可以管理该软件。
-func repoHasDeb(owner, repo string) bool {
+// checkRepoDeb 查询 GitHub 仓库最新 Release 是否提供当前架构的 .deb。
+// 返回 hasDeb 表示是否存在匹配的 .deb；err 非 nil 表示网络/API 错误（并非"无 .deb"）。
+func checkRepoDeb(owner, repo string) (bool, error) {
 	arch, err := deb.DetectArch()
 	if err != nil {
-		return false
+		return false, err
 	}
 	client := gh.NewClient()
 	release, relErr := client.GetLatestRelease(owner, repo)
 	if relErr != nil {
-		return false
+		return false, relErr
 	}
 	result, _ := gh.FindAssetWithFallback(release, arch)
-	return result != nil && result.Asset != nil
+	return result != nil && result.Asset != nil, nil
+}
+
+// writeFileMaybeSudo 写文件；权限不足时降级用 sudo tee。
+func writeFileMaybeSudo(path string, data []byte) error {
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		if errors.Is(err, os.ErrPermission) {
+			cmd := exec.Command("sudo", "tee", path)
+			cmd.Stdin = strings.NewReader(string(data))
+			cmd.Stdout = nil
+			cmd.Stderr = os.Stderr
+			if err := cmd.Run(); err != nil {
+				return fmt.Errorf("写入失败（sudo 被拒绝或失败）: %w", err)
+			}
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
+// backupCatalogFile 将目录文件复制为临时备份（用于出错回退）。
+func backupCatalogFile(src, dst string) error {
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	return writeFileMaybeSudo(dst, data)
+}
+
+// restoreCatalogFile 从备份恢复目录文件。
+func restoreCatalogFile(src, dst string) error {
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	return writeFileMaybeSudo(dst, data)
 }
 
 // compareVersion 比较两个软件版本，返回 -1(a<b) / 0(a==b) / 1(a>b)。
