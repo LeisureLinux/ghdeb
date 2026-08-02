@@ -79,7 +79,7 @@ cp debian/hooks_template/remove-monitor.sh ${PKG_DIR}/usr/share/ghdeb/hooks/remo
 chmod 755 ${PKG_DIR}/usr/share/ghdeb/hooks/remove-monitor.sh
 
 # 生成控制文件（替换 Architecture 字段）
-sed "s/^Architecture:.*/Architecture: ${TARGET_ARCH}/" debian/control > ${PKG_DIR}/DEBIAN/control
+sed -e "s/^Version:.*/Version: ${VERSION}/" -e "s/^Architecture:.*/Architecture: ${TARGET_ARCH}/" debian/control > ${PKG_DIR}/DEBIAN/control
 
 # 复制 postinst/prerm/postrm 并设置权限
 cp debian/postinst ${PKG_DIR}/DEBIAN/postinst

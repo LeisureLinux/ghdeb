@@ -1,5 +1,5 @@
 Package: ghdeb
-Version: 0.7.22
+Version: 0.7.24
 Section: utils
 Priority: optional
 Architecture: amd64
