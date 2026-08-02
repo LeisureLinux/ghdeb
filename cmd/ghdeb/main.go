@@ -300,39 +300,6 @@ func cmdUpgrade(args []string) error {
 		return err
 	}
 
-	// 升级前自动扫描孤立包
-	if len(args) == 0 {
-		fmt.Println(T("🔍 扫描系统中的 GitHub 孤立包...", "🔍 Scanning GitHub orphan packages..."))
-		orphans, scanErr := state.ScanOrphans(false, nil, "")
-		if scanErr != nil {
-			fmt.Fprintf(os.Stderr, "⚠️  %s: %v\n", T("扫描失败", "Scan failed"), scanErr)
-		} else if len(orphans) > 0 {
-			added := state.MergeOrphansToState(st, orphans)
-			if added > 0 {
-				fmt.Printf(T("📦 发现 %d 个新的 GitHub 孤立包，已纳入管理\n", "📦 Found %d new GitHub orphan packages, added to management\n"), added)
-				for _, o := range orphans {
-					var repoKey string
-					if o.HasGitHub {
-						repoKey = o.Owner + "/" + o.Repo
-					} else {
-						repoKey = o.PkgName
-					}
-					if st.Get(repoKey) != nil && st.Get(repoKey).UpdatedAt == "auto-discovered" {
-						if o.HasGitHub {
-							fmt.Printf("   + %s/%s (%s)\n", o.Owner, o.Repo, o.Version)
-						} else {
-							fmt.Printf("   + %s (%s)\n", o.PkgName, o.Version)
-						}
-					}
-				}
-				if saveErr := st.Save(); saveErr != nil {
-					fmt.Fprintf(os.Stderr, "⚠️  %s: %v\n", T("保存状态失败", "Save state failed"), saveErr)
-				}
-			}
-		}
-		fmt.Println()
-	}
-
 	type upgradeTarget struct {
 		owner string
 		repo  string
@@ -375,19 +342,32 @@ func cmdUpgrade(args []string) error {
 			}
 		}
 	} else {
-		for _, r := range st.List() {
-			if r.Owner == "" || r.Repo == "" {
+		// 无参数：直接按当前 catalog 清单驱动，仅收集已装且未移除的条目
+		cat, catErr := catalog.Load()
+		if catErr != nil {
+			return fmt.Errorf("加载目录失败: %w", catErr)
+		}
+		for _, name := range cat.SortedNames() {
+			entry := cat.Lookup(name)
+			if entry == nil || entry.Repo == "" {
 				continue
 			}
-			installed := false
-			if r.PkgName != "" {
-				installed = deb.IsPackageInstalled(r.PkgName)
+			owner, repo, perr := gh.ParseRepo(entry.Repo)
+			if perr != nil {
+				continue
 			}
-			if r.Removed && installed {
-				r.Removed = false
-				fmt.Printf(T("📦 %s/%s 仍在系统上，恢复管理\n", "📦 %s/%s still installed, restoring management\n"), r.Owner, r.Repo)
+			rec := st.Get(owner + "/" + repo)
+			if rec == nil || rec.Removed {
+				continue // 未在管理或已移除，跳过
 			}
-			targets = append(targets, upgradeTarget{owner: r.Owner, repo: r.Repo, pkg: r})
+			pkgName := rec.PkgName
+			if pkgName == "" {
+				pkgName = rec.Repo
+			}
+			if !deb.IsPackageInstalled(pkgName) {
+				continue // 实际未安装，跳过（不重新安装）
+			}
+			targets = append(targets, upgradeTarget{owner: owner, repo: repo, pkg: rec})
 		}
 	}
 
