@@ -254,9 +254,17 @@ func cmdInstall(args []string) error {
 		return err
 	}
 	repoKey := owner + "/" + repo
-	if existing := st.Get(repoKey); existing != nil && versionEqual(existing.CurrentVersion, release.TagName) && !existing.Removed {
-		fmt.Printf(T("✅ %s 已安装版本 %s，无需重复安装\n", "✅ %s version %s already installed, no need to reinstall\n"), repo, release.TagName)
-		return nil
+	if existing := st.Get(repoKey); existing != nil && !existing.Removed {
+		// 以系统实际安装版本为准，避免 state 里陈旧的 current_version 误判
+		pkgName := existing.PkgName
+		if pkgName == "" {
+			pkgName = existing.Repo
+		}
+		sysVer := state.QuerySystemVersion(pkgName)
+		if sysVer != "" && versionEqual(sysVer, release.TagName) {
+			fmt.Printf(T("✅ %s 已安装版本 %s，无需重复安装\n", "✅ %s version %s already installed, no need to reinstall\n"), repo, release.TagName)
+			return nil
+		}
 	}
 
 	asset, err := gh.FindDebAsset(release, arch)
@@ -421,7 +429,19 @@ func cmdUpgrade(args []string) error {
 		}
 		client.SetCachedRelease(t.owner, t.repo, release.TagName)
 
-		if t.pkg != nil && versionEqual(t.pkg.CurrentVersion, release.TagName) && !t.pkg.Removed {
+		// 判断是否已是最新：以系统实际安装版本为准，避免 state 里陈旧的 current_version 误判
+		alreadyLatest := false
+		if t.pkg != nil && !t.pkg.Removed {
+			pkgName := t.pkg.PkgName
+			if pkgName == "" {
+				pkgName = t.pkg.Repo
+			}
+			sysVer := state.QuerySystemVersion(pkgName)
+			if sysVer != "" && versionEqual(sysVer, release.TagName) {
+				alreadyLatest = true
+			}
+		}
+		if alreadyLatest {
 			fmt.Printf(T("✅ 已是最新版本 %s\n", "✅ Already latest version %s\n"), release.TagName)
 			continue
 		}
