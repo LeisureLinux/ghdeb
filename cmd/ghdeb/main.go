@@ -1665,10 +1665,9 @@ func cmdUpdate(args []string) error {
 	client := gh.NewClient()
 	names := cat.SortedNames()
 
-	// 1) 收集需要实时查询最新版本的仓库（快照/缓存未命中才查 GitHub）
+	// 1) 收集所有需检查的 GitHub 仓库条目
 	type task struct{ name, owner, repo string }
 	var tasks []task
-	latestVer := make(map[string]string) // key = "owner/repo"
 	for _, name := range names {
 		entry := entries[name]
 		if entry.Repo == "" {
@@ -1678,56 +1677,65 @@ func cmdUpdate(args []string) error {
 		if perr != nil {
 			continue
 		}
-		if v := client.GetCachedRelease(owner, repo); v != "" {
-			latestVer[owner+"/"+repo] = v
-		} else {
-			tasks = append(tasks, task{name, owner, repo})
-		}
+		tasks = append(tasks, task{name, owner, repo})
+	}
+	total := len(tasks)
+	if total == 0 {
+		fmt.Println(T("目录中没有可检查的 GitHub 软件包", "No GitHub packages to check in catalog"))
+		return nil
 	}
 
-	// 预估耗时提示（需实时查询的数量）
-	if len(tasks) > 0 {
-		mm := estimateMinutes(len(tasks))
-		fmt.Printf(T("需要去 github 网站检查 catalog 内 %d 个软件包的最新版本，预计需要 %d 分钟\n",
-			"Need to check latest versions of %d packages on GitHub, estimated ~%d minutes\n"),
-			len(tasks), mm)
-	}
+	// 进展提示：需检查的包数与预计耗时
+	mm := estimateMinutes(total)
+	fmt.Printf(T("需要去 github 网站检查 catalog 内 %d 个软件包的最新版本，预计需要 %d 分钟\n",
+		"Need to check latest versions of %d packages on GitHub, estimated ~%d minutes\n"),
+		total, mm)
 
-	// 并发查询未命中缓存的仓库
-	if len(tasks) > 0 {
-		var wg sync.WaitGroup
-		var mu sync.Mutex
-		sem := make(chan struct{}, 8)
-		for _, t := range tasks {
-			wg.Add(1)
-			go func(t task) {
-				defer wg.Done()
-				sem <- struct{}{}
-				defer func() { <-sem }()
-				// 进度提示：正在检查 pkg-name，<owner/repo>
-				mu.Lock()
-				fmt.Fprintf(os.Stderr, "  %s %s，<%s/%s> ...\n",
-					T("正在检查", "Checking"), t.name, t.owner, t.repo)
-				mu.Unlock()
-				rel, relErr := client.GetLatestRelease(t.owner, t.repo)
-				if relErr != nil {
-					return
+	// 2) 并发检查（8 路限流），单行进度条实时刷新
+	latestVer := make(map[string]string) // key = "owner/repo"
+	var (
+		mu         sync.Mutex // 保护 latestVer 与 releases 缓存
+		progressMu sync.Mutex // 保护进度条输出与完成计数
+		done       int
+	)
+	// printProgress 刷新进度条（\r 单行覆盖）
+	printProgress := func(name, owner, repo string) {
+		progressMu.Lock()
+		done++
+		fmt.Fprintf(os.Stderr, "\r  %s %s，<%s/%s> ...  [%d/%d]  ",
+			T("正在检查", "Checking"), name, owner, repo, done, total)
+		progressMu.Unlock()
+	}
+	sem := make(chan struct{}, 8)
+	var wg sync.WaitGroup
+	for _, t := range tasks {
+		wg.Add(1)
+		go func(t task) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			// 缓存命中直接取缓存版本（快速推进进度条），否则请求 GitHub
+			ver := client.GetCachedRelease(t.owner, t.repo)
+			if ver == "" {
+				if rel, relErr := client.GetLatestRelease(t.owner, t.repo); relErr == nil {
+					ver = rel.TagName
+					mu.Lock()
+					client.SetCachedRelease(t.owner, t.repo, ver)
+					mu.Unlock()
 				}
-				mu.Lock()
-				latestVer[t.owner+"/"+t.repo] = rel.TagName
-				mu.Unlock()
-			}(t)
-		}
-		wg.Wait()
-		for key, v := range latestVer {
-			parts := strings.SplitN(key, "/", 2)
-			if len(parts) == 2 {
-				client.SetCachedRelease(parts[0], parts[1], v)
 			}
-		}
+			if ver != "" {
+				mu.Lock()
+				latestVer[t.owner+"/"+t.repo] = ver
+				mu.Unlock()
+			}
+			printProgress(t.name, t.owner, t.repo)
+		}(t)
 	}
+	wg.Wait()
+	fmt.Fprintln(os.Stderr)
 
-	// 2) 校验并移除无当前架构 .deb 的条目（写入系统目录）
+	// 3) 校验并移除无当前架构 .deb 的条目（写入系统目录）
 	path := catalog.SystemCatalogPath()
 	curData, rErr := os.ReadFile(path)
 	if rErr != nil {
@@ -1764,7 +1772,7 @@ func cmdUpdate(args []string) error {
 		}
 	}
 
-	// 3) 组装并写回快照
+	// 4) 组装并写回快照
 	snap := state.LoadSnapshot()
 	snap.UpdatedAt = time.Now().Format(time.RFC3339)
 
