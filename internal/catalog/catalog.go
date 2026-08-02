@@ -190,3 +190,31 @@ func FormatEntry(name string, entry *CatalogEntry) string {
 func (e *CatalogEntry) IsDirectURL() bool {
 	return e.URL != "" && e.Repo == ""
 }
+
+// RepoSet 返回所有 repo 的集合（小写 owner/repo）
+func (c *Catalog) RepoSet() map[string]bool {
+	set := make(map[string]bool)
+	for _, entry := range c.Packages {
+		if entry.Repo != "" {
+			set[strings.ToLower(entry.Repo)] = true
+		}
+	}
+	return set
+}
+
+// HasRepo 检查是否有某个 repo
+func (c *Catalog) HasRepo(repo string) bool {
+	repo = strings.ToLower(repo)
+	for _, entry := range c.Packages {
+		if strings.ToLower(entry.Repo) == repo {
+			return true
+		}
+	}
+	return false
+}
+
+// HasName 检查是否有某个短名称
+func (c *Catalog) HasName(name string) bool {
+	_, ok := c.Packages[name]
+	return ok
+}

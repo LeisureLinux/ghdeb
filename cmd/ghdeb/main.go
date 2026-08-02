@@ -20,7 +20,7 @@ import (
 	"github.com/leisurelinux/ghdeb/internal/state"
 )
 
-const version = "0.7.9"
+const version = "0.7.10"
 
 func main() {
 	// 检查是否使用 --json，如果是则不打印 banner
@@ -1245,12 +1245,13 @@ func cmdScan(args []string) error {
 	}
 
 	if deepScan {
-		fmt.Println(T("🔍 深度扫描系统中的孤立包（抓取 Homepage 查找 GitHub 链接）...", "🔍 Deep scanning orphan packages (fetching Homepage for GitHub links)..."))
+		fmt.Println(T("🔍 深度扫描系统（孤立包 + apt 包的 GitHub Homepage）...", "🔍 Deep scanning system (orphan packages + apt GitHub Homepage)..."))
 	} else {
 		fmt.Println(T("🔍 扫描系统中的孤立包（无 apt 源）...", "🔍 Scanning orphan packages (no apt source)..."))
-		fmt.Println(T("   提示: 使用 --deep 参数可尝试从 Homepage 页面中查找 GitHub 链接", "   Hint: Use --deep to fetch Homepage for GitHub links"))
+		fmt.Println(T("   提示: 使用 --deep 参数可进行深度扫描（含 apt 包 GitHub 检测）", "   Hint: Use --deep for deep scan (includes apt GitHub detection)"))
 	}
 
+	// ========== 第一部分：孤立包扫描 ==========
 	progress := func(msg string) {
 		fmt.Println(msg)
 	}
@@ -1260,60 +1261,166 @@ func cmdScan(args []string) error {
 		return fmt.Errorf("扫描失败: %w", scanErr)
 	}
 
-	if len(pkgs) == 0 {
-		fmt.Println(T("未发现 GitHub 来源的孤立包", "No GitHub-sourced orphan packages found"))
+	if len(pkgs) > 0 {
+		fmt.Printf(T("\n📋 发现 %d 个孤立包:\n", "\n📋 Found %d orphan packages:\n"), len(pkgs))
+		fmt.Printf("%-20s %-30s %-12s %-10s %s\n", T("包名", "Package"), T("仓库", "Repo"), T("版本", "Version"), T("状态", "Status"), "Homepage")
+		fmt.Println(strings.Repeat("-", 100))
+
+		newCount := 0
+		for _, p := range pkgs {
+			var repoSlug string
+			if p.HasGitHub {
+				repoSlug = p.Owner + "/" + p.Repo
+			} else {
+				repoSlug = T("(待补充)", "(pending)")
+			}
+
+			existing := st.GetByPkgName(p.PkgName)
+
+			status := "🆕 " + T("未管理", "unmanaged")
+			if existing != nil {
+				if existing.Removed {
+					status = "❌ " + T("removed", "removed")
+				} else {
+					status = "✅ " + T("已管理", "managed")
+				}
+			}
+
+			fmt.Printf("%-20s %-30s %-12s %-10s %s\n",
+				p.PkgName,
+				repoSlug,
+				p.Version,
+				status,
+				truncate(p.Homepage, 40),
+			)
+
+			if existing == nil {
+				newCount++
+			}
+		}
+
+		if newCount > 0 {
+			fmt.Printf(T("\n📦 其中 %d 个尚未管理\n", "\n📦 %d of them are unmanaged\n"), newCount)
+			fmt.Print(T("是否纳入 ghdeb 管理？[y/N] ", "Add them to ghdeb management? [y/N] "))
+			var answer string
+			fmt.Scanln(&answer)
+			if strings.ToLower(answer) == "y" {
+				added := state.MergeOrphansToState(st, pkgs)
+				if err := st.Save(); err != nil {
+					return fmt.Errorf("保存状态失败: %w", err)
+				}
+				fmt.Printf(T("✅ 已将 %d 个包纳入管理\n", "✅ Added %d packages to management\n"), added)
+			}
+		}
+	} else {
+		fmt.Println(T("未发现孤立包", "No orphan packages found"))
+	}
+
+	// ========== 第二部分（仅 --deep）：apt 已安装包的 GitHub Homepage 检测 ==========
+	if !deepScan {
 		return nil
 	}
 
-	fmt.Printf(T("\n发现 %d 个孤立包:\n", "\nFound %d orphan packages:\n"), len(pkgs))
-	fmt.Printf("%-20s %-30s %-12s %-10s %s\n", T("包名", "Package"), T("仓库", "Repo"), T("版本", "Version"), T("状态", "Status"), "Homepage")
-	fmt.Println(strings.Repeat("-", 100))
+	fmt.Println(T("\n🔍 扫描 apt 已安装包的 GitHub Homepage...", "\n🔍 Scanning apt installed packages for GitHub Homepage..."))
 
-	newCount := 0
-	for _, p := range pkgs {
-		var repoSlug string
-		if p.HasGitHub {
-			repoSlug = p.Owner + "/" + p.Repo
-		} else {
-			repoSlug = T("(待补充)", "(pending)")
-		}
+	// 加载 catalog，获取已有 repo 集合
+	cat, catErr := catalog.Load()
+	if catErr != nil {
+		return fmt.Errorf("加载 catalog 失败: %w", catErr)
+	}
+	repoSet := cat.RepoSet()
 
-		existing := st.GetByPkgName(p.PkgName)
+	ghPkgs, ghErr := state.ScanAptGitHubPackages(repoSet)
+	if ghErr != nil {
+		return fmt.Errorf("扫描 apt GitHub 包失败: %w", ghErr)
+	}
 
-		status := "🆕 " + T("未管理", "unmanaged")
-		if existing != nil {
-			if existing.Removed {
-				status = "❌ " + T("removed", "removed")
-			} else {
-				status = "✅ " + T("已管理", "managed")
-			}
-		}
-
-		fmt.Printf("%-20s %-30s %-12s %-10s %s\n",
-			p.PkgName,
-			repoSlug,
-			p.Version,
-			status,
-			truncate(p.Homepage, 40),
-		)
-
-		if existing == nil {
-			newCount++
+	// 过滤出不在 catalog 中的
+	var unmanaged []state.AptGitHubPackage
+	for _, p := range ghPkgs {
+		if !p.InCatalog {
+			unmanaged = append(unmanaged, p)
 		}
 	}
 
-	if newCount > 0 {
-		fmt.Printf(T("\n📦 其中 %d 个尚未管理\n", "\n📦 %d of them are unmanaged\n"), newCount)
-		fmt.Print(T("是否纳入 ghdeb 管理？[y/N] ", "Add them to ghdeb management? [y/N] "))
-		var answer string
-		fmt.Scanln(&answer)
-		if strings.ToLower(answer) == "y" {
-			added := state.MergeOrphansToState(st, pkgs)
-			if err := st.Save(); err != nil {
-				return fmt.Errorf("保存状态失败: %w", err)
-			}
-			fmt.Printf(T("✅ 已将 %d 个包纳入管理\n", "✅ Added %d packages to management\n"), added)
+	if len(ghPkgs) == 0 {
+		fmt.Println(T("未发现 Homepage 指向 GitHub 的 apt 包", "No apt packages with GitHub Homepage found"))
+		return nil
+	}
+
+	managedCount := len(ghPkgs) - len(unmanaged)
+	fmt.Printf(T("共发现 %d 个 apt 包的 Homepage 指向 GitHub（%d 已在 catalog，%d 未纳入）\n",
+		"Found %d apt packages with GitHub Homepage (%d in catalog, %d not in catalog)\n"),
+		len(ghPkgs), managedCount, len(unmanaged))
+
+	if len(unmanaged) == 0 {
+		fmt.Println(T("✅ 所有 GitHub apt 包已在 catalog 中", "✅ All GitHub apt packages are already in catalog"))
+		return nil
+	}
+
+	// 显示未纳入的包
+	fmt.Printf("\n%-20s %-30s %-15s %s\n",
+		T("deb 包名", "deb Package"),
+		T("GitHub 仓库", "GitHub Repo"),
+		T("已装版本", "Installed"),
+		"Homepage")
+	fmt.Println(strings.Repeat("-", 100))
+
+	for _, p := range unmanaged {
+		fmt.Printf("%-20s %-30s %-15s %s\n",
+			p.PkgName,
+			p.Owner+"/"+p.Repo,
+			p.Version,
+			truncate(p.Homepage, 40),
+		)
+	}
+
+	// 询问是否添加到 catalog
+	fmt.Printf(T("\n📦 是否将 %d 个包添加到 catalog.toml？[y/N] ",
+		"\n📦 Add %d packages to catalog.toml? [y/N] "), len(unmanaged))
+	var answer2 string
+	fmt.Scanln(&answer2)
+	if strings.ToLower(answer2) != "y" {
+		return nil
+	}
+
+	// 添加到 catalog
+	addedToCatalog := 0
+	path := catalog.SystemCatalogPath()
+
+	// 加载现有 catalog 内容
+	entries := make(map[string]catalog.CatalogEntry)
+	if data, readErr := os.ReadFile(path); readErr == nil {
+		var raw map[string]catalog.CatalogEntry
+		toml.Decode(string(data), &raw)
+		entries = raw
+	}
+
+	for _, p := range unmanaged {
+		// 使用 repo 名称（小写）作为短名称
+		name := strings.ToLower(p.Repo)
+
+		// 检查短名称是否已存在
+		if _, ok := entries[name]; ok {
+			continue
 		}
+
+		entries[name] = catalog.CatalogEntry{
+			Repo:       p.Owner + "/" + p.Repo,
+			PrettyName: p.Repo,
+			Website:    fmt.Sprintf("https://github.com/%s/%s", p.Owner, p.Repo),
+			Summary:    fmt.Sprintf("Auto-discovered from apt package: %s", p.PkgName),
+		}
+		addedToCatalog++
+	}
+
+	if addedToCatalog > 0 {
+		if writeErr := writeSystemCatalog(path, entries); writeErr != nil {
+			return fmt.Errorf("写入 catalog 失败: %w", writeErr)
+		}
+		fmt.Printf(T("✅ 已将 %d 个包添加到 %s\n", "✅ Added %d packages to %s\n"), addedToCatalog, path)
+	} else {
+		fmt.Println(T("⚠️  没有新包可添加", "⚠️  No new packages to add"))
 	}
 
 	return nil
