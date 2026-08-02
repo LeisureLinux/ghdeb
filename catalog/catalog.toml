@@ -108,7 +108,7 @@ pretty_name = "procs"
 website = "https://github.com/dalance/procs"
 summary = "A modern replacement for ps written in Rust"
 
-[delta]
+[git-delta]
 repo = "dandavison/delta"
 pretty_name = "git-delta"
 website = "https://github.com/dandavison/delta"
@@ -125,12 +125,6 @@ repo = "extrawurst/gitui"
 pretty_name = "gitui"
 website = "https://github.com/extrawurst/gitui"
 summary = "Blazing fast terminal-ui for git written in rust"
-
-[tealdeer]
-repo = "dbrgn/tealdeer"
-pretty_name = "tealdeer"
-website = "https://github.com/dbrgn/tealdeer"
-summary = "A very fast implementation of tldr in Rust"
 
 # === 远程桌面 / 网络 ===
 
@@ -170,7 +164,7 @@ summary = "A GPU-accelerated cross-platform terminal emulator and multiplexer"
 
 # === 绘图 / 设计 ===
 
-[draw.io]
+[drawio]
 repo = "jgraph/drawio-desktop"
 pretty_name = "draw.io"
 website = "https://www.diagrams.net"
@@ -258,12 +252,6 @@ summary = "Get up and running with large language models locally"
 
 # === 通讯 ===
 
-[element-desktop]
-repo = "element-hq/element-desktop"
-pretty_name = "Element Desktop"
-website = "https://element.io"
-summary = "A glossy Matrix collaboration client for desktop"
-
 # === 加密工具 ===
 
 [age]
@@ -343,7 +331,6 @@ repo = "balena-io/etcher"
 pretty_name = "balenaEtcher"
 website = "https://etcher.balena.io"
 summary = "Flash OS images to SD cards & USB drives, safely and easily"
-
 
 # === 包管理工具 ===
 

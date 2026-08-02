@@ -200,6 +200,16 @@ func cmdInstall(args []string) error {
 	}
 
 	repoStr, tag := parseRepoSpec(args[0])
+	
+	// 检查是否是 catalog 短名称
+	var catalogName string
+	cat, _ := catalog.Load()
+	if cat != nil {
+		if entry := cat.Lookup(repoStr); entry != nil {
+			catalogName = repoStr
+		}
+	}
+	
 	owner, repo, err := resolvePkgArg(repoStr)
 	if err != nil {
 		return err
@@ -258,7 +268,13 @@ func cmdInstall(args []string) error {
 		return fmt.Errorf("保存状态失败: %w", err)
 	}
 
-	fmt.Printf(T("🎉 安装完成: %s %s\n", "🎉 Install complete: %s %s\n"), repoKey, release.TagName)
+	// 显示安装结果
+	slug := repoKey
+	if catalogName != "" {
+		slug = catalogName + " (" + repoKey + ")"
+	}
+	fmt.Printf(T("🎉 安装完成: %s\n", "🎉 Install complete: %s\n"), slug)
+	fmt.Printf(T("   OS package name: %s\n", "   OS package name: %s\n"), pkgName)
 	return nil
 }
 
@@ -1102,82 +1118,133 @@ func cmdList(args []string) error {
 		}
 	}
 
+	// 加载 catalog
+	cat, err := catalog.Load()
+	if err != nil {
+		return fmt.Errorf("加载目录失败: %w", err)
+	}
+
+	// 加载 state
 	st, err := state.Load()
 	if err != nil {
 		return err
 	}
-	records := st.List()
-	if len(records) == 0 {
-		fmt.Println(T("没有已管理的包", "No managed packages"))
-		fmt.Println(T("提示: 运行 'ghdeb scan' 扫描系统中的 GitHub 来源包", "Hint: Run 'ghdeb scan' to discover GitHub-sourced packages"))
-		return nil
-	}
-
-	fmt.Printf("%-35s %-12s %-12s %-12s %-10s %-19s\n", T("包名:仓库slug", "Pkg:Repo"), T("记录版本", "Recorded"), T("实际版本", "System"), T("最新版本", "Latest"), T("状态", "Status"), T("最后操作", "Updated"))
-	fmt.Println(strings.Repeat("-", 110))
 
 	client := gh.NewClient()
-
 	if refresh {
 		gh.InvalidateCache("", "")
 	}
 
-	sort.Slice(records, func(i, j int) bool {
-		return records[i].PkgName < records[j].PkgName
-	})
+	// 表头
+	fmt.Printf("%-20s %-25s %-12s %-12s %-15s\n",
+		T("包名", "Name"), T("仓库", "Repo"),
+		T("已装版本", "Installed"), T("最新版本", "Latest"),
+		T("状态", "Status"))
+	fmt.Println(strings.Repeat("-", 90))
 
-	for _, r := range records {
-		r.RefreshSystemInfo(r.PkgName)
+	// 遍历 catalog 所有条目
+	names := cat.SortedNames()
+	installedCount := 0
+	upgradableCount := 0
 
-		status := "✅ " + T("installed", "installed")
-		if r.Removed {
-			status = "❌ " + T("removed", "removed")
+	for _, name := range names {
+		entry := cat.Packages[name]
+		repo := entry.Repo
+
+		// 从 state 查找（通过 repo key）
+		rec := st.Get(repo)
+
+		// 检查系统是否实际安装
+		var sysVer string
+		if rec != nil && rec.PkgName != "" {
+			rec.RefreshSystemInfo(rec.PkgName)
+			sysVer = rec.SystemVersion
 		}
 
-		sysVer := r.SystemVersion
+		// 获取最新版本
+		latestVer := "-"
+		if repo != "" {
+			parts := strings.SplitN(repo, "/", 2)
+			if len(parts) == 2 {
+				cached := client.GetCachedRelease(parts[0], parts[1])
+				if cached != "" {
+					latestVer = cached
+				} else {
+					rel, apiErr := client.GetLatestRelease(parts[0], parts[1])
+					if apiErr == nil {
+						latestVer = rel.TagName
+						client.SetCachedRelease(parts[0], parts[1], rel.TagName)
+					}
+				}
+			}
+		}
+
+		// 确定状态
+		var status string
+		var installedVer string
+
+		if rec != nil && !rec.Removed && sysVer != "" {
+			// 已安装
+			installedVer = sysVer
+			installedCount++
+
+			// 比较版本
+			if latestVer != "-" && latestVer != rec.CurrentVersion {
+				status = "🔄 " + T("可升级", "upgradable")
+				upgradableCount++
+			} else {
+				status = "✅ " + T("已安装", "installed")
+			}
+		} else {
+			// 未安装
+			installedVer = "-"
+			status = "📦 " + T("可安装", "available")
+		}
+
+		fmt.Printf("%-20s %-25s %-12s %-12s %-15s\n",
+			name, truncate(repo, 23), installedVer, latestVer, status)
+	}
+
+	// 检查 state 中不在 catalog 的包（orphan，仅显示有 GitHub repo 的）
+	for _, rec := range st.List() {
+		if rec.Removed {
+			continue
+		}
+		// 跳过没有 GitHub repo 的包
+		if rec.Owner == "" || rec.Repo == "" {
+			continue
+		}
+		repoKey := rec.Owner + "/" + rec.Repo
+		// 检查是否已在 catalog 中处理
+		found := false
+		for _, entry := range cat.Packages {
+			if entry.Repo == repoKey {
+				found = true
+				break
+			}
+		}
+		if found {
+			continue
+		}
+
+		// 不在 catalog 中的 orphan 包（有 GitHub repo）
+		rec.RefreshSystemInfo(rec.PkgName)
+		sysVer := rec.SystemVersion
 		if sysVer == "" {
 			sysVer = "-"
 		}
-
-		latestVer := "-"
-		if !r.Removed && r.Owner != "" && r.Repo != "" {
-			cached := client.GetCachedRelease(r.Owner, r.Repo)
-			if cached != "" {
-				latestVer = cached
-			} else {
-				release, apiErr := client.GetLatestRelease(r.Owner, r.Repo)
-				if apiErr == nil {
-					latestVer = release.TagName
-					client.SetCachedRelease(r.Owner, r.Repo, release.TagName)
-				}
-			}
-			if latestVer != "-" && latestVer != r.CurrentVersion {
-				status = "🔄 " + T("可升级", "upgradable")
-			}
-		}
-
-		updatedAt := r.UpdatedAt
-		if updatedAt != "auto-discovered" {
-			updatedAt = formatTime(updatedAt)
-		}
-
-		var repoPart string
-		if r.Owner != "" && r.Repo != "" {
-			repoPart = r.Owner + "/" + r.Repo
-		} else {
-			repoPart = T("无", "None")
-		}
-		pkgSlug := r.PkgName + ":" + repoPart
-
-		fmt.Printf("%-35s %-12s %-12s %-12s %-10s %-19s\n",
-			pkgSlug,
-			r.CurrentVersion,
-			sysVer,
-			latestVer,
-			status,
-			updatedAt,
-		)
+		status := "✅ " + T("已安装", "installed")
+		fmt.Printf("%-20s %-25s %-12s %-12s %-15s\n",
+			rec.PkgName, repoKey, sysVer, "-", status)
 	}
+
+	fmt.Println(strings.Repeat("-", 90))
+	fmt.Printf(T("共 %d 个包，%d 个已安装", "Total %d packages, %d installed"), len(names), installedCount)
+	if upgradableCount > 0 {
+		fmt.Printf(T("，%d 个可升级", ", %d upgradable"), upgradableCount)
+	}
+	fmt.Println()
+
 	return nil
 }
 
