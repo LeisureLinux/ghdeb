@@ -1565,11 +1565,14 @@ func cmdList(args []string) error {
 		Upgradeable      bool   `json:"upgradeable"`
 	}
 	var jsonPkgs []listPkg
+	installedCount := 0
+	upgradeableCount := 0
 
 	if !jsonOutput {
-		fmt.Printf("%-20s %-25s %-12s %-12s %s\n",
-			T("名称", "Name"), T("仓库/URL", "Repo/URL"),
-			T("已装版本", "Installed"), T("最新版本", "Latest"), T("状态", "Status"))
+		fmt.Printf("%s %s %s %s %s\n",
+			padRight(T("名称", "Name"), 20), padRight(T("仓库/URL", "Repo/URL"), 25),
+			padRight(T("已装版本", "Installed"), 14), padRight(T("最新版本", "Latest"), 12),
+			T("状态", "Status"))
 		fmt.Println(strings.Repeat("-", 80))
 	}
 
@@ -1592,6 +1595,13 @@ func cmdList(args []string) error {
 			installedVer = sn.InstalledVersion
 			latest = sn.LatestVersion
 			upgradeable = sn.Upgradeable
+		}
+
+		if installed {
+			installedCount++
+		}
+		if upgradeable {
+			upgradeableCount++
 		}
 
 		status := ""
@@ -1619,8 +1629,9 @@ func cmdList(args []string) error {
 			if lv == "" {
 				lv = "-"
 			}
-			fmt.Printf("%-20s %-25s %-12s %-12s %s\n",
-				name, truncate(repoOrURL, 23), iv, lv, status)
+			fmt.Printf("%s %s %s %s %s\n",
+				padRight(name, 20), padRight(truncate(repoOrURL, 23), 25),
+				padRight(iv, 14), padRight(lv, 12), status)
 		}
 	}
 
@@ -1629,7 +1640,10 @@ func cmdList(args []string) error {
 		fmt.Println(string(jsonData))
 	} else {
 		fmt.Println(strings.Repeat("-", 80))
-		fmt.Printf(T("共 %d 个条目\n", "Total %d entries\n"), len(names))
+		notInstalled := len(names) - installedCount
+		fmt.Printf(T("目录共 %d 个软件包，未安装 %d 个，已安装 %d 个，其中可升级 %d 个\n",
+			"Catalog has %d packages: %d not installed, %d installed, %d upgradeable\n"),
+			len(names), notInstalled, installedCount, upgradeableCount)
 	}
 	return nil
 }
@@ -1671,6 +1685,14 @@ func cmdUpdate(args []string) error {
 		}
 	}
 
+	// 预估耗时提示（需实时查询的数量）
+	if len(tasks) > 0 {
+		mm := estimateMinutes(len(tasks))
+		fmt.Printf(T("需要去 github 网站检查 catalog 内 %d 个软件包的最新版本，预计需要 %d 分钟\n",
+			"Need to check latest versions of %d packages on GitHub, estimated ~%d minutes\n"),
+			len(tasks), mm)
+	}
+
 	// 并发查询未命中缓存的仓库
 	if len(tasks) > 0 {
 		var wg sync.WaitGroup
@@ -1682,6 +1704,11 @@ func cmdUpdate(args []string) error {
 				defer wg.Done()
 				sem <- struct{}{}
 				defer func() { <-sem }()
+				// 进度提示：正在检查 pkg-name，<owner/repo>
+				mu.Lock()
+				fmt.Fprintf(os.Stderr, "  %s %s，<%s/%s> ...\n",
+					T("正在检查", "Checking"), t.name, t.owner, t.repo)
+				mu.Unlock()
 				rel, relErr := client.GetLatestRelease(t.owner, t.repo)
 				if relErr != nil {
 					return
@@ -1804,6 +1831,23 @@ func containsStr(list []string, s string) bool {
 		}
 	}
 	return false
+}
+
+// estimateMinutes 估算并发检查 n 个仓库需要的分钟数：
+// 平均每个请求约 1.5s，8 路并发，结果向上取整，至少 1 分钟。
+func estimateMinutes(n int) int {
+	if n <= 0 {
+		return 0
+	}
+	sec := float64(n) * 1.5 / 8.0
+	mm := int(sec / 60.0)
+	if sec/60.0-float64(mm) > 0 {
+		mm++
+	}
+	if mm < 1 {
+		mm = 1
+	}
+	return mm
 }
 
 // --- history ---
