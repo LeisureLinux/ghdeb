@@ -1313,8 +1313,9 @@ func cmdScan(args []string) error {
 			if existing != nil {
 				if existing.Removed {
 					status = "❌ " + T("removed", "removed")
-				} else if aptDeep && p.HasGitHub && !repoHasDeb(p.Owner, p.Repo) {
-					// Homepage 指向 GitHub，但最新 Release 无当前架构 .deb，无法管理
+				} else if targetPkg != "" && aptDeep && p.HasGitHub && !repoHasDeb(p.Owner, p.Repo) {
+					// 单包深度扫描才做网络校验：Homepage 指向 GitHub，
+					// 但最新 Release 无当前架构 .deb，无法管理
 					status = "⚠️ " + T("孤立包", "orphan")
 				} else {
 					status = "✅ " + T("已管理", "managed")
@@ -1451,8 +1452,9 @@ func cmdScan(args []string) error {
 			continue
 		}
 
-		// 最新 Release 无当前架构 .deb 的仓库无法由 ghdeb 管理，跳过
-		if !repoHasDeb(p.Owner, p.Repo) {
+		// 单包深度扫描才做网络校验：最新 Release 无当前架构 .deb 的仓库跳过；
+		// 批量添加不做网络校验，直接纳入，避免数百次 GitHub API 请求卡死
+		if targetPkg != "" && !repoHasDeb(p.Owner, p.Repo) {
 			skippedNoDeb++
 			continue
 		}
@@ -1471,7 +1473,7 @@ func cmdScan(args []string) error {
 			return fmt.Errorf("写入 catalog 失败: %w", writeErr)
 		}
 		fmt.Printf(T("✅ 已将 %d 个包添加到 %s\n", "✅ Added %d packages to %s\n"), addedToCatalog, path)
-	} else if skippedNoDeb > 0 {
+	} else if targetPkg != "" && skippedNoDeb > 0 {
 		fmt.Println(T("没有找到合适的 .deb 包，ghdeb 无法管理该软件。",
 			"No matching .deb found, ghdeb cannot manage this software."))
 	} else {
