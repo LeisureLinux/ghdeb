@@ -32,7 +32,7 @@ type OrphanPackage struct {
 
 // ScanOrphans 扫描系统中所有 orphan 包
 // deepScan: 是否对非 GitHub Homepage 进行深度扫描（抓取页面查找 GitHub 链接）
-func ScanOrphans(deepScan bool, progress func(string)) ([]OrphanPackage, error) {
+func ScanOrphans(deepScan bool, progress func(string), pkgFilter string) ([]OrphanPackage, error) {
 	// 1. 快速获取所有 orphan 包名
 	orphanPkgs, err := getOrphanPackages()
 	if err != nil {
@@ -57,6 +57,10 @@ func ScanOrphans(deepScan bool, progress func(string)) ([]OrphanPackage, error) 
 	githubRepoRegex := regexp.MustCompile(`github\.com/([a-zA-Z0-9_-]+)/([a-zA-Z0-9_-]+)`)
 
 	for _, pkgName := range orphanPkgs {
+		// 若指定目标包，仅处理该包
+		if pkgFilter != "" && pkgName != pkgFilter {
+			continue
+		}
 		pkg, ok := pkgMap[pkgName]
 		if !ok {
 			continue
@@ -269,16 +273,16 @@ func (s *State) GetByPkgName(pkgName string) *PackageRecord {
 
 // AptGitHubPackage apt 安装的 GitHub 包信息
 type AptGitHubPackage struct {
-	PkgName  string // deb 包名
-	Version  string
-	Owner    string // GitHub owner
-	Repo     string // GitHub repo
-	Homepage string
-	InCatalog bool  // 是否已在 catalog 中
+	PkgName   string // deb 包名
+	Version   string
+	Owner     string // GitHub owner
+	Repo      string // GitHub repo
+	Homepage  string
+	InCatalog bool // 是否已在 catalog 中
 }
 
 // ScanAptGitHubPackages 扫描所有 apt 已安装包，找出 Homepage 指向 github.com 的
-func ScanAptGitHubPackages(catalogRepos map[string]bool) ([]AptGitHubPackage, error) {
+func ScanAptGitHubPackages(catalogRepos map[string]bool, pkgFilter string) ([]AptGitHubPackage, error) {
 	// 解析所有已安装的包
 	allPkgs, err := parseDpkgStatus()
 	if err != nil {
@@ -291,6 +295,10 @@ func ScanAptGitHubPackages(catalogRepos map[string]bool) ([]AptGitHubPackage, er
 	seen := make(map[string]bool) // 避免重复
 
 	for _, pkg := range allPkgs {
+		// 若指定了目标包，仅检测该包
+		if pkgFilter != "" && pkg.Name != pkgFilter {
+			continue
+		}
 		// 只处理已安装的包
 		if !strings.Contains(pkg.Status, "installed") || strings.Contains(pkg.Status, "not-installed") {
 			continue

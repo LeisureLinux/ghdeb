@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"github.com/BurntSushi/toml"
 	"os"
-	"sort"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -20,7 +20,7 @@ import (
 	"github.com/leisurelinux/ghdeb/internal/state"
 )
 
-const version = "0.7.11"
+const version = "0.7.12"
 
 func main() {
 	// 检查是否使用 --json，如果是则不打印 banner
@@ -33,7 +33,7 @@ func main() {
 			}
 		}
 	}
-	
+
 	if !jsonMode {
 		fmt.Printf(T("ghdeb v%s - 管理从 GitHub Releases 下载的 .deb 包 © LeisureLinux\n", "ghdeb v%s - manage .deb packages downloaded from GitHub Releases © LeisureLinux\n"), version)
 	}
@@ -102,7 +102,7 @@ func printUsage() {
   ghdeb install <pkg|owner/repo>[@tag]  安装（支持短名称或 owner/repo）
   ghdeb upgrade [pkg]                   升级包（不指定则升级所有）
   ghdeb reinstall <pkg>                 重新安装指定包
-  ghdeb scan [--deep]                   扫描系统中的 GitHub 孤立包并纳入管理
+  ghdeb scan [--deep [pkg|--all]]                   扫描系统中的 GitHub 孤立包并纳入管理
   ghdeb search <pattern>                在包目录中搜索
   ghdeb list [--refresh]                列出所有已管理的包
   ghdeb catalog list                    列出包目录中所有条目
@@ -144,7 +144,7 @@ Usage:
   ghdeb install <pkg|owner/repo>[@tag]  Install (short name or owner/repo)
   ghdeb upgrade [pkg]                   Upgrade packages (all if unspecified)
   ghdeb reinstall <pkg>                 Reinstall a package
-  ghdeb scan [--deep]                   Scan system for GitHub orphan packages
+  ghdeb scan [--deep [pkg|--all]]                   Scan system for GitHub orphan packages
   ghdeb search <pattern>                Search in package catalog
   ghdeb list [--refresh]                List managed packages
   ghdeb catalog list                    List all catalog entries
@@ -218,7 +218,7 @@ func cmdInstall(args []string) error {
 	}
 
 	repoStr, tag := parseRepoSpec(args[0])
-	
+
 	// 检查是否是 catalog 短名称
 	var catalogName string
 	cat, _ := catalog.Load()
@@ -227,7 +227,7 @@ func cmdInstall(args []string) error {
 			catalogName = repoStr
 		}
 	}
-	
+
 	owner, repo, err := resolvePkgArg(repoStr)
 	if err != nil {
 		return err
@@ -307,7 +307,7 @@ func cmdUpgrade(args []string) error {
 	// 升级前自动扫描孤立包
 	if len(args) == 0 {
 		fmt.Println(T("🔍 扫描系统中的 GitHub 孤立包...", "🔍 Scanning GitHub orphan packages..."))
-		orphans, scanErr := state.ScanOrphans(false, nil)
+		orphans, scanErr := state.ScanOrphans(false, nil, "")
 		if scanErr != nil {
 			fmt.Fprintf(os.Stderr, "⚠️  %s: %v\n", T("扫描失败", "Scan failed"), scanErr)
 		} else if len(orphans) > 0 {
@@ -675,20 +675,20 @@ func cmdShow(args []string) error {
 
 	// JSON 输出结构
 	type showInfo struct {
-		ShortName      string `json:"short_name,omitempty"`
-		Repo           string `json:"repo"`
-		PrettyName     string `json:"pretty_name,omitempty"`
-		Website        string `json:"website,omitempty"`
-		Summary        string `json:"summary,omitempty"`
-		Status         string `json:"status,omitempty"`
-		RecordedVer    string `json:"recorded_version,omitempty"`
-		SystemVer      string `json:"system_version,omitempty"`
-		Arch           string `json:"arch,omitempty"`
-		DebName        string `json:"deb_name,omitempty"`
-		LatestVer      string `json:"latest_version,omitempty"`
-		ReleaseURL     string `json:"release_url,omitempty"`
-		MatchFile      string `json:"match_file,omitempty"`
-		MatchSize      string `json:"match_size,omitempty"`
+		ShortName   string `json:"short_name,omitempty"`
+		Repo        string `json:"repo"`
+		PrettyName  string `json:"pretty_name,omitempty"`
+		Website     string `json:"website,omitempty"`
+		Summary     string `json:"summary,omitempty"`
+		Status      string `json:"status,omitempty"`
+		RecordedVer string `json:"recorded_version,omitempty"`
+		SystemVer   string `json:"system_version,omitempty"`
+		Arch        string `json:"arch,omitempty"`
+		DebName     string `json:"deb_name,omitempty"`
+		LatestVer   string `json:"latest_version,omitempty"`
+		ReleaseURL  string `json:"release_url,omitempty"`
+		MatchFile   string `json:"match_file,omitempty"`
+		MatchSize   string `json:"match_size,omitempty"`
 	}
 	var info showInfo
 	info.Repo = repoKey
@@ -814,8 +814,6 @@ func cmdShow(args []string) error {
 	}
 	return nil
 }
-
-
 
 // --- catalog ---
 
@@ -999,20 +997,20 @@ func addToSystemCatalog(name string, entry *catalog.CatalogEntry) error {
 	}
 
 	path := catalog.SystemCatalogPath()
-	
+
 	// 加载现有内容
 	entries := make(map[string]catalog.CatalogEntry)
 	if data, err := os.ReadFile(path); err == nil {
 		toml.Decode(string(data), &entries)
 	}
-	
+
 	// 检查是否已存在
 	if _, ok := entries[name]; ok {
 		return fmt.Errorf("条目 %s 已存在于 %s", name, path)
 	}
-	
+
 	entries[name] = *entry
-	
+
 	// 写入（需要 root 权限）
 	return writeSystemCatalog(path, entries)
 }
@@ -1020,7 +1018,7 @@ func addToSystemCatalog(name string, entry *catalog.CatalogEntry) error {
 // removeFromSystemCatalog 从系统级目录删除条目
 func removeFromSystemCatalog(name string) error {
 	path := catalog.SystemCatalogPath()
-	
+
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -1028,14 +1026,14 @@ func removeFromSystemCatalog(name string) error {
 		}
 		return err
 	}
-	
+
 	entries := make(map[string]catalog.CatalogEntry)
 	toml.Decode(string(data), &entries)
-	
+
 	if _, ok := entries[name]; !ok {
 		return fmt.Errorf("系统目录中未找到 %s", name)
 	}
-	
+
 	delete(entries, name)
 	return writeSystemCatalog(path, entries)
 }
@@ -1047,19 +1045,19 @@ func writeSystemCatalog(path string, entries map[string]catalog.CatalogEntry) er
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("创建目录失败: %w", err)
 	}
-	
+
 	var sb strings.Builder
 	sb.WriteString("# ghdeb 包目录 (Known Packages Catalog)\n")
 	sb.WriteString("# 路径: " + path + "\n#\n")
 	sb.WriteString("# 编辑此文件需 root 权限: sudo vim /etc/ghdeb/catalog.toml\n\n")
-	
+
 	// 按名称排序输出
 	names := make([]string, 0, len(entries))
 	for name := range entries {
 		names = append(names, name)
 	}
 	sort.Strings(names)
-	
+
 	for _, name := range names {
 		entry := entries[name]
 		sb.WriteString(fmt.Sprintf("[%s]\n", name))
@@ -1083,7 +1081,7 @@ func writeSystemCatalog(path string, entries map[string]catalog.CatalogEntry) er
 		}
 		sb.WriteString("\n")
 	}
-	
+
 	data := []byte(sb.String())
 	if err := os.WriteFile(path, data, 0644); err != nil {
 		if errors.Is(err, os.ErrPermission) {
@@ -1099,7 +1097,7 @@ func writeSystemCatalog(path string, entries map[string]catalog.CatalogEntry) er
 		}
 		return fmt.Errorf("写入失败: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -1238,14 +1236,36 @@ func cmdScan(args []string) error {
 	}
 
 	deepScan := false
+	allDeep := false
+	targetPkg := ""
 	for _, arg := range args {
-		if arg == "--deep" {
+		switch arg {
+		case "--deep":
 			deepScan = true
+		case "--all", "-a":
+			allDeep = true
+		default:
+			if strings.HasPrefix(arg, "-") {
+				// 忽略未知选项
+			} else if targetPkg == "" {
+				targetPkg = arg
+			}
 		}
 	}
+	// deep 实际启用条件：--deep 且（--all 或指定了包名）
+	aptDeep := deepScan && (allDeep || targetPkg != "")
 
-	if deepScan {
-		fmt.Println(T("🔍 深度扫描系统（孤立包 + apt 包的 GitHub Homepage）...", "🔍 Deep scanning system (orphan packages + apt GitHub Homepage)..."))
+	if aptDeep {
+		if targetPkg != "" {
+			fmt.Printf(T("🔍 深度扫描 %s（孤立包 + apt GitHub 检测）...\n",
+				"🔍 Deep scanning %s (orphan + apt GitHub detection)...\n"), targetPkg)
+		} else if allDeep {
+			fmt.Println(T("🔍 深度扫描系统全部 apt 包（孤立包 + apt GitHub 检测）...",
+				"🔍 Deep scanning all apt packages (orphan + apt GitHub detection)..."))
+		} else {
+			fmt.Println(T("🔍 深度扫描系统（孤立包 + apt 包的 GitHub Homepage）...",
+				"🔍 Deep scanning system (orphan packages + apt GitHub Homepage)..."))
+		}
 	} else {
 		fmt.Println(T("🔍 扫描系统中的孤立包（无 apt 源）...", "🔍 Scanning orphan packages (no apt source)..."))
 		fmt.Println(T("   提示: 使用 --deep 参数可进行深度扫描（含 apt 包 GitHub 检测）", "   Hint: Use --deep for deep scan (includes apt GitHub detection)"))
@@ -1256,7 +1276,7 @@ func cmdScan(args []string) error {
 		fmt.Println(msg)
 	}
 
-	pkgs, scanErr := state.ScanOrphans(deepScan, progress)
+	pkgs, scanErr := state.ScanOrphans(aptDeep, progress, targetPkg)
 	if scanErr != nil {
 		return fmt.Errorf("扫描失败: %w", scanErr)
 	}
@@ -1317,7 +1337,7 @@ func cmdScan(args []string) error {
 	}
 
 	// ========== 第二部分（仅 --deep）：apt 已安装包的 GitHub Homepage 检测 ==========
-	if !deepScan {
+	if !aptDeep {
 		return nil
 	}
 
@@ -1330,7 +1350,7 @@ func cmdScan(args []string) error {
 	}
 	repoSet := cat.RepoSet()
 
-	ghPkgs, ghErr := state.ScanAptGitHubPackages(repoSet)
+	ghPkgs, ghErr := state.ScanAptGitHubPackages(repoSet, targetPkg)
 	if ghErr != nil {
 		return fmt.Errorf("扫描 apt GitHub 包失败: %w", ghErr)
 	}
@@ -1344,7 +1364,11 @@ func cmdScan(args []string) error {
 	}
 
 	if len(ghPkgs) == 0 {
-		fmt.Println(T("未发现 Homepage 指向 GitHub 的 apt 包", "No apt packages with GitHub Homepage found"))
+		if targetPkg != "" {
+			fmt.Printf(T("未发现 %s 的 GitHub Homepage\n", "No GitHub Homepage found for %s\n"), targetPkg)
+		} else {
+			fmt.Println(T("未发现 Homepage 指向 GitHub 的 apt 包", "No apt packages with GitHub Homepage found"))
+		}
 		return nil
 	}
 
@@ -1459,11 +1483,11 @@ func cmdList(args []string) error {
 
 	// JSON 输出结构
 	type listPkg struct {
-		Name           string `json:"name"`
-		Repo           string `json:"repo"`
-		InstalledVer   string `json:"installed_version,omitempty"`
-		LatestVer      string `json:"latest_version,omitempty"`
-		Status         string `json:"status"`
+		Name         string `json:"name"`
+		Repo         string `json:"repo"`
+		InstalledVer string `json:"installed_version,omitempty"`
+		LatestVer    string `json:"latest_version,omitempty"`
+		Status       string `json:"status"`
 	}
 	var jsonPkgs []listPkg
 
@@ -1878,15 +1902,16 @@ func truncate(s string, maxLen int) string {
 	}
 	return s[:maxLen-3] + "..."
 }
+
 // displayWidth 计算字符串的显示宽度（中文字符占 2 个宽度）
 func displayWidth(s string) int {
 	width := 0
 	for _, r := range s {
 		if r >= 0x4E00 && r <= 0x9FFF || // CJK 统一汉字
-		   r >= 0x3000 && r <= 0x303F || // CJK 符号和标点
-		   r >= 0xFF00 && r <= 0xFFEF || // 全角 ASCII 和半角形式
-		   r >= 0x3400 && r <= 0x4DBF || // CJK 扩展 A
-		   r >= 0x20000 && r <= 0x2A6DF { // CJK 扩展 B
+			r >= 0x3000 && r <= 0x303F || // CJK 符号和标点
+			r >= 0xFF00 && r <= 0xFFEF || // 全角 ASCII 和半角形式
+			r >= 0x3400 && r <= 0x4DBF || // CJK 扩展 A
+			r >= 0x20000 && r <= 0x2A6DF { // CJK 扩展 B
 			width += 2
 		} else {
 			width += 1
@@ -1916,7 +1941,4 @@ func padRight(s string, width int) string {
 	return s + strings.Repeat(" ", width-currentWidth)
 }
 
-
-
 var _ = syscall.Geteuid
-
