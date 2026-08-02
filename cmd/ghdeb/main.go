@@ -1159,7 +1159,18 @@ func writeSystemCatalog(path string, entries map[string]catalog.CatalogEntry, fi
 	sb.WriteString("# ghdeb 包目录 (Known Packages Catalog)\n")
 	sb.WriteString("# 路径: " + path + "\n#\n")
 	sb.WriteString("# 维护本目录可使用命令：ghdeb catalog init, list, show, search, add, delete\n")
-	sb.WriteString("# Catalog initialized at " + time.Now().Format("2006-01-02 15:04:05") + "\n\n")
+	// 仅维护首次初始化时间：文件已记录则保留原值，否则写当前时间
+	initAt := time.Now().Format("2006-01-02 15:04:05")
+	if data, rErr := os.ReadFile(path); rErr == nil {
+		marker := "# Catalog initialized at "
+		if i := strings.Index(string(data), marker); i >= 0 {
+			rest := string(data)[i+len(marker):]
+			if nl := strings.IndexByte(rest, '\n'); nl >= 0 {
+				initAt = rest[:nl]
+			}
+		}
+	}
+	sb.WriteString("# Catalog initialized at " + initAt + "\n\n")
 
 	// 输出顺序：firstKeys 强制排最前，其余按名称排序
 	ordered := make([]string, 0, len(firstKeys)+len(entries))
