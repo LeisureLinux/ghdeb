@@ -1,18 +1,23 @@
 // Package github 多线程下载实现。
 //
-// 下载核心借鉴 aria2 / axel 的"段分配器"算法，针对弱网 + 代理环境做三层强化：
-//  1. 动态段分配（而非静态分块）：workers 用一个互斥游标按需领取小段，
-//     快 worker 会自然领到更多段，慢 worker 不会拖累其它 worker——自平衡。
-//  2. 逐段重试（而非整体回退）：某一段失败只重新入队该段并指数退避，
-//     绝不再因为一段失败就全盘放弃多线程回退单线程。
-//  3. 僵死连接检测：每个段配一个 watchdog，盯住"最后读到字节的时间"，
-//     超过阈值即判定连接僵死，主动掐断该段请求交由其它 worker 重试。
+// 下载核心借鉴 aria2 / axel 的"抢占式段表"算法，针对弱网 + 代理环境做四层强化：
+//  1. 段队列 + 抢占接管：所有段放入共享队列，worker 按需领取。
+//     某段下载中断/僵死时，把"未下载的剩余部分"重新入队，空闲 worker
+//     可立即抢占接管——绝不因为一段僵死就整体干等。
+//  2. 逐段重试（无退避）：段失败只把剩余部分交回队列，由空闲 worker 接手，
+//     避免指数退避造成的长时间假死。
+//  3. 僵死连接检测：watchdog 从请求发出前就开始盯住"最后读到字节的时间"，
+//     覆盖"等响应头"与"读响应体"两个阶段，超过阈值即主动 cancel 中断，
+//     交回剩余段。绝不无限期卡在 Do() 或 Read() 上。
+//  4. 实时字节进度：读循环内随写盘实时上报已下载字节，界面连续跳动，
+//     不再"整段完成才报"造成卡死观感。
 //
-// 相比 aria2 的二进制/库依赖，这里仅用 Go 标准库即可复刻其核心思路。
+// 相比 aria2 的二进制/库依赖，这里仅用 Go 标准库即可复刻其核心抢占算法。
 package github
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -26,51 +31,124 @@ import (
 
 // 下载配置
 const (
-	defaultConcurrency = 4               // 默认并发数
-	minChunkSize       = 1 << 20         // 小于该大小不值得多线程
-	maxSegmentRetries  = 5               // 单段最大重试次数
-	writeBufSize       = 64 * 1024       // 写缓冲
+	defaultConcurrency = 4                      // 默认并发数
+	minChunkSize       = 1 << 20                // 小于该大小不值得多线程
+	maxSegmentRetries  = 5                      // 单个剩余段最大接管/重试次数
+	writeBufSize       = 64 * 1024              // 写缓冲
+	progressInterval   = 200 * time.Millisecond // 实时进度上报的最小间隔
 )
 
-// 以下两项用变量而非常量，便于测试时注入小值做快速验证。
-// 生产环境保持默认即可：4MB 段 + 20s 僵死阈值。
+// 以下几项用变量而非常量，便于测试时注入小值做快速验证。
+// 生产环境保持默认即可：4MB 段 + 15s 僵死阈值。
 var (
 	segSize      = 4 << 20          // 动态段大小 4MB
-	stallTimeout = 20 * time.Second // 段内超过该时长无新字节判定僵死
+	stallTimeout = 15 * time.Second // 段内超过该时长无新字节判定僵死
 )
 
-// downloadState 共享的下载进度状态（worker 池共享）
+// segment 一个待下载的段（或剩余子段）
+type segment struct {
+	start, end int64
+	attempts   int // 已被接管/重试的次数
+}
+
+// downloadState 共享的下载进度状态（worker 池共享，用条件变量协调抢占）
 type downloadState struct {
-	mu         sync.Mutex
-	nextOffset int64 // 下一个待分配的段起点（动态游标）
-	fileSize   int64
-	failed     error // 是否出现不可恢复错误
+	mu       sync.Mutex
+	cond     *sync.Cond
+	pending  []segment // 待下载段队列
+	active   int       // 正在下载（含阻塞读）的 worker 数
+	fileSize int64
+	failed   error // 不可恢复错误
+	done     bool  // 全部字节已落盘
 
 	downloaded int64 // 已完成的字节数（atomic 访问）
+	progress   func(downloaded, total int64)
+	lastTick   time.Time // 上次进度回调时刻（用于节流）
 }
 
-// nextSegment 动态领取下一段 [start,end]，文件领完返回 ok=false
-func (s *downloadState) nextSegment() (start, end int64, ok bool) {
+// newDownloadState 初始化下载状态，fileSize 决定何时判定完成
+func newDownloadState(fileSize int64, progress func(downloaded, total int64)) *downloadState {
+	s := &downloadState{
+		fileSize: fileSize,
+		progress: progress,
+		lastTick: time.Now(),
+	}
+	s.cond = sync.NewCond(&s.mu)
+	return s
+}
+
+// enqueueInitial 按段大小预填充整份文件的初始段队列
+func (s *downloadState) enqueueInitial(segSize int64) {
+	s.mu.Lock()
+	for off := int64(0); off < s.fileSize; off += segSize {
+		end := off + segSize - 1
+		if end >= s.fileSize {
+			end = s.fileSize - 1
+		}
+		s.pending = append(s.pending, segment{start: off, end: end})
+	}
+	s.cond.Broadcast()
+	s.mu.Unlock()
+}
+
+// take 领取一个段。无段可领时阻塞等待，直到有段、出错或全部完成。
+// 领取成功即计入 active，防止队列变空时 worker 误判完成退出。
+func (s *downloadState) take() (segment, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.nextOffset >= s.fileSize {
-		return 0, 0, false
+	for {
+		if s.failed != nil || s.done {
+			return segment{}, false
+		}
+		if len(s.pending) > 0 {
+			seg := s.pending[0]
+			s.pending = s.pending[1:]
+			s.active++
+			return seg, true
+		}
+		s.cond.Wait()
 	}
-	start = s.nextOffset
-	end = start + int64(segSize) - 1
-	if end >= s.fileSize {
-		end = s.fileSize - 1
-	}
-	s.nextOffset = end + 1
-	return start, end, true
 }
 
+// requeue 把剩余段交回队列尾部，唤醒所有等待的 worker（抢占接管）
+func (s *downloadState) requeue(seg segment) {
+	s.mu.Lock()
+	s.pending = append(s.pending, seg)
+	s.cond.Broadcast()
+	s.mu.Unlock()
+}
+
+// finish 标记一个 worker 处理完当前段（无论成败）。当无活跃 worker 且
+// 队列为空时即全部完成；若字节数对不上则视为内部错误。
+func (s *downloadState) finish() {
+	s.mu.Lock()
+	s.active--
+	if s.failed == nil && s.active == 0 && len(s.pending) == 0 {
+		if atomic.LoadInt64(&s.downloaded) >= s.fileSize {
+			s.done = true
+		} else {
+			s.failed = errors.New("internal: downloaded bytes mismatch")
+		}
+	}
+	s.cond.Broadcast()
+	s.mu.Unlock()
+}
+
+// addDownloaded 累加已下载字节并节流地触发实时进度回调
 func (s *downloadState) addDownloaded(n int64) {
-	atomic.AddInt64(&s.downloaded, n)
-}
-
-func (s *downloadState) currentDownloaded() int64 {
-	return atomic.LoadInt64(&s.downloaded)
+	d := atomic.AddInt64(&s.downloaded, n)
+	if s.progress == nil {
+		return
+	}
+	now := time.Now()
+	s.mu.Lock()
+	if now.Sub(s.lastTick) >= progressInterval {
+		s.lastTick = now
+		s.mu.Unlock()
+		s.progress(d, s.fileSize)
+		return
+	}
+	s.mu.Unlock()
 }
 
 func (s *downloadState) setFailed(err error) {
@@ -78,6 +156,7 @@ func (s *downloadState) setFailed(err error) {
 	if s.failed == nil {
 		s.failed = err
 	}
+	s.cond.Broadcast()
 	s.mu.Unlock()
 }
 
@@ -89,8 +168,6 @@ func (s *downloadState) getFailed() error {
 
 // checkRangeSupport 检查服务器是否支持 Range 请求
 func (c *Client) checkRangeSupport(downloadURL string) (bool, int64, error) {
-	// 使用 GET 请求的 Range: bytes=0-0 来检查支持情况并获取文件大小
-	// 这比 HEAD 更可靠，因为某些服务器对 HEAD 和 GET 的响应不同
 	req, err := http.NewRequest("GET", downloadURL, nil)
 	if err != nil {
 		return false, 0, err
@@ -106,17 +183,14 @@ func (c *Client) checkRangeSupport(downloadURL string) (bool, int64, error) {
 		return false, 0, err
 	}
 	defer resp.Body.Close()
-	// 读完 body 使连接能被复用，避免连接泄漏
 	io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
 
-	// 206 表示支持 Range，200 表示不支持
 	if resp.StatusCode != http.StatusPartialContent && resp.StatusCode != http.StatusOK {
 		return false, 0, fmt.Errorf("range check returned HTTP %d", resp.StatusCode)
 	}
 
 	supportsRange := resp.StatusCode == http.StatusPartialContent
 
-	// 从 Content-Range 获取文件大小: "bytes 0-0/12345"
 	var contentLength int64
 	if contentRange := resp.Header.Get("Content-Range"); contentRange != "" {
 		var total int64
@@ -125,7 +199,6 @@ func (c *Client) checkRangeSupport(downloadURL string) (bool, int64, error) {
 		}
 	}
 
-	// 如果不支持 Range，尝试从 Content-Length 获取
 	if !supportsRange && resp.ContentLength > 0 {
 		contentLength = resp.ContentLength
 	}
@@ -133,16 +206,58 @@ func (c *Client) checkRangeSupport(downloadURL string) (bool, int64, error) {
 	return supportsRange, contentLength, nil
 }
 
-// downloadSegment 下载单个动态段 [start,end]，带僵死连接检测。
-// 通过 watchdog goroutine 监控最后读到字节的时间，若超过 stallTimeout
-// 判定连接僵死，主动 cancel + 关闭 body 中断当前阻塞读，返回错误交由上层重试。
-func (c *Client) downloadSegment(ctx context.Context, downloadURL string, start, end int64, destPath string) error {
+// downloadSegment 下载单个段 [start,end]，带僵死检测与实时进度。
+//
+// watchdog 在发起请求前即启动，统一盯住两个阶段：
+//   - 等响应头（http.Client.Do 阻塞）：lastRead 一直停留在段启动时刻，
+//     若超过 stallTimeout 无响应头，cancel 中断 Do，交回整段重试；
+//   - 读响应体（resp.Body.Read 阻塞）：每读到 n>0 字节更新 lastRead，
+//     若超过 stallTimeout 无新字节，cancel 中断阻塞读，交回剩余段抢占。
+//
+// 返回已写盘的字节数与错误；调用方据此计算"剩余部分"交回队列抢占。
+func (c *Client) downloadSegment(ctx context.Context, downloadURL string, start, end int64, destPath string, st *downloadState) (int64, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
+	// ---- 僵死检测 watchdog（覆盖 Do 与 Body 读两个阶段）----
+	// lastRead 初始化为段启动时刻：若连响应头都迟迟不来，同样视为僵死。
+	var lastRead int64
+	atomic.StoreInt64(&lastRead, time.Now().UnixNano())
+
+	done := make(chan struct{})
+	var watchdogOnce sync.Once
+	stopWatchdog := func() { watchdogOnce.Do(func() { close(done) }) }
+	defer stopWatchdog()
+
+	// ticker 间隔跟随 stallTimeout 自适应，测试注入小阈值时也能秒级触发
+	tick := stallTimeout / 4
+	if tick < 20*time.Millisecond {
+		tick = 20 * time.Millisecond
+	}
+	if tick > 2*time.Second {
+		tick = 2 * time.Second
+	}
+
+	go func() {
+		ticker := time.NewTicker(tick)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				last := atomic.LoadInt64(&lastRead)
+				if time.Since(time.Unix(0, last)) >= stallTimeout {
+					cancel() // 中断当前阻塞的 Do 或 Body.Read
+					return
+				}
+			}
+		}
+	}()
+
 	req, err := http.NewRequestWithContext(ctx, "GET", downloadURL, nil)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	req.Header.Set("Accept", "application/octet-stream")
 	req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", start, end))
@@ -152,55 +267,25 @@ func (c *Client) downloadSegment(ctx context.Context, downloadURL string, start,
 
 	resp, err := c.downloadClient.Do(req)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusPartialContent && resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("chunk download returned HTTP %d", resp.StatusCode)
+		return 0, fmt.Errorf("chunk download returned HTTP %d", resp.StatusCode)
 	}
 
-	// 打开文件并定位到正确位置
 	f, err := os.OpenFile(destPath, os.O_WRONLY, 0644)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer f.Close()
 
 	if _, err := f.Seek(start, io.SeekStart); err != nil {
-		return err
+		return 0, err
 	}
 
-	// ---- 僵死连接检测 watchdog ----
-	// lastRead 记录最后读到字节的时刻（nanotime，atomic 访问）
-	var lastRead int64
-	atomic.StoreInt64(&lastRead, time.Now().UnixNano())
-
-	done := make(chan struct{})
-	var watchdogOnce sync.Once
-	stopWatchdog := func() { watchdogOnce.Do(func() { close(done) }) }
-	defer stopWatchdog()
-
-	go func() {
-		ticker := time.NewTicker(2 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-done:
-				return
-			case <-ticker.C:
-				last := atomic.LoadInt64(&lastRead)
-				if time.Since(time.Unix(0, last)) >= stallTimeout {
-					// 僵死：中断当前阻塞读，交由上层重试
-					cancel()
-					resp.Body.Close()
-					return
-				}
-			}
-		}
-	}()
-
-	// ---- 带进度的段拷贝 ----
+	// ---- 带实时进度的段拷贝 ----
 	buf := make([]byte, writeBufSize)
 	var written int64
 	for {
@@ -209,92 +294,86 @@ func (c *Client) downloadSegment(ctx context.Context, downloadURL string, start,
 			atomic.StoreInt64(&lastRead, time.Now().UnixNano())
 			if _, writeErr := f.Write(buf[:n]); writeErr != nil {
 				stopWatchdog()
-				return writeErr
+				return written, writeErr
 			}
 			written += int64(n)
+			st.addDownloaded(int64(n))
 		}
 		if readErr == io.EOF {
 			break
 		}
 		if readErr != nil {
 			stopWatchdog()
-			return readErr
+			return written, readErr
 		}
 	}
 	stopWatchdog()
 
-	// 校验段长度，防止截断/被 watchdog 中断后仍误判成功
 	expected := end - start + 1
 	if written != expected {
-		return fmt.Errorf("segment truncated: got %d, want %d", written, expected)
+		return written, fmt.Errorf("segment truncated: got %d, want %d", written, expected)
 	}
-	return nil
+	return written, nil
 }
 
 // worker 单个下载 worker 的主循环：
-// 动态领段 -> 下载（失败则逐段重试+指数退避）-> 报告进度 -> 领下一段。
-func (c *Client) worker(ctx context.Context, downloadURL, destPath string, st *downloadState, progress func(downloaded, total int64)) {
+// 领段 -> 下载（失败把剩余部分交回队列抢占）-> 实时报进度 -> 领下一段。
+func (c *Client) worker(ctx context.Context, downloadURL, destPath string, st *downloadState) {
 	for {
-		start, end, ok := st.nextSegment()
+		seg, ok := st.take()
 		if !ok {
-			return // 所有段已分配完
+			return // 已完成或已出错
 		}
 
-		// 逐段重试（指数退避），失败不殃及其它 worker
-		var segErr error
-		for attempt := 1; ; attempt++ {
+		for {
+			written, err := c.downloadSegment(ctx, downloadURL, seg.start, seg.end, destPath, st)
+			if err == nil {
+				break // 本段完成
+			}
 			if ctx.Err() != nil {
 				st.setFailed(ctx.Err())
-				return
-			}
-			segErr = c.downloadSegment(ctx, downloadURL, start, end, destPath)
-			if segErr == nil {
 				break
 			}
-			if attempt >= maxSegmentRetries {
-				st.setFailed(segErr)
-				return
-			}
-			wait := retryBaseWait * time.Duration(1<<(attempt-1)) // 2s,4s,8s...
-			select {
-			case <-time.After(wait):
-			case <-ctx.Done():
-				st.setFailed(ctx.Err())
-				return
-			}
-		}
 
-		st.addDownloaded(end - start + 1)
-		if progress != nil {
-			progress(st.currentDownloaded(), st.fileSize)
+			remStart := seg.start + written
+			if remStart > seg.end {
+				break // 字节已写满，仅末尾读报错，视为成功
+			}
+
+			seg.start = remStart
+			seg.attempts++
+			if seg.attempts > maxSegmentRetries {
+				st.setFailed(err)
+				break
+			}
+			// 交回剩余段，空闲 worker 可抢占接管
+			st.requeue(seg)
+			break
 		}
+		st.finish()
 	}
 }
 
-// DownloadAssetParallel 多线程下载 asset（动态段分配 worker 池）。
+// DownloadAssetParallel 多线程下载 asset（抢占式段队列 worker 池）。
 func (c *Client) DownloadAssetParallel(asset Asset, destPath string, concurrency int, progress func(downloaded, total int64)) error {
 	if concurrency <= 0 {
 		concurrency = defaultConcurrency
 	}
 
-	// 检查是否支持 Range
 	supportsRange, fileSize, err := c.checkRangeSupport(asset.BrowserDownloadURL)
 	if err != nil {
-		// 回退到单线程
 		return c.DownloadAsset(asset, destPath, progress)
 	}
 
 	if !supportsRange || fileSize <= 0 {
-		// 不支持 Range 或无法获取大小，回退到单线程
 		return c.DownloadAsset(asset, destPath, progress)
 	}
 
-	// 小文件不需要多线程
 	if fileSize < minChunkSize*2 {
 		return c.DownloadAsset(asset, destPath, progress)
 	}
 
-	// 创建目标文件并预分配空间
+	// 预分配目标文件，各 worker 定位写入
 	f, err := os.Create(destPath)
 	if err != nil {
 		return err
@@ -305,20 +384,18 @@ func (c *Client) DownloadAssetParallel(asset Asset, destPath string, concurrency
 	}
 	f.Close()
 
-	// 启动 worker 池，动态领段
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	st := &downloadState{
-		fileSize: fileSize,
-	}
+	st := newDownloadState(fileSize, progress)
+	st.enqueueInitial(int64(segSize))
 
 	var wg sync.WaitGroup
 	for i := 0; i < concurrency; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			c.worker(ctx, asset.BrowserDownloadURL, destPath, st, progress)
+			c.worker(ctx, asset.BrowserDownloadURL, destPath, st)
 		}()
 	}
 	wg.Wait()
@@ -330,8 +407,8 @@ func (c *Client) DownloadAssetParallel(asset Asset, destPath string, concurrency
 }
 
 // DownloadAssetWithFallback 带多线程回退的下载。
-// 多线程下载本身已内建"逐段重试 + 僵死检测"，只有出现不可恢复错误
-// 或文件不支持 Range 时才回退到单线程下载。
+// 多线程本身已内建"抢占接管 + 僵死检测"，只有不可恢复错误或
+// 文件不支持 Range 时才回退到单线程下载。
 func (c *Client) DownloadAssetWithFallback(asset Asset, destPath string, progress func(downloaded, total int64)) error {
 	err := c.DownloadAssetParallel(asset, destPath, defaultConcurrency, progress)
 	if err != nil {

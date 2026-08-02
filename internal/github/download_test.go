@@ -155,3 +155,78 @@ func TestStallDetectionAndRetry(t *testing.T) {
 		t.Fatalf("content mismatch:\n got %s\nwant %s", got, expectedSHA(data))
 	}
 }
+
+// 测试抢占式接管：两个相邻尾段首次请求都被故意"写一小段后僵死"。
+// watchdog 触发后交回剩余段，空闲 worker 抢占接管——整体完成时间应
+// 明显短于服务器僵死挂起时长，证明没有"干等僵死结束"。
+func TestMultipleStalledSegmentsPreemption(t *testing.T) {
+	data := make([]byte, 16<<20)
+	for i := range data {
+		data[i] = byte(i % 211)
+	}
+	serverStall := 3 * time.Second // 服务器僵死挂起时长（应被抢占规避）
+
+	// 记录段 [4MB,6MB) 与 [6MB,8MB) 各自首次请求是否已僵死过
+	var mu sync.Mutex
+	stalled := map[int64]bool{4 << 20: false, 6 << 20: false}
+
+	writePartialStall := func(w http.ResponseWriter, start int64) {
+		end := start + (2 << 20) - 1
+		if end >= int64(len(data)) {
+			end = int64(len(data)) - 1
+		}
+		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, len(data)))
+		w.Header().Set("Content-Length", strconv.FormatInt(end-start+1, 10))
+		w.WriteHeader(206)
+		w.Write(data[start : start+100]) // 只写 100 字节
+		time.Sleep(serverStall)          // 然后长时间僵死，远超 stallTimeout
+	}
+
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		rangeHdr := r.Header.Get("Range")
+		var start, end int64
+		fmt.Sscanf(strings.TrimPrefix(rangeHdr, "bytes="), "%d-%d", &start, &end)
+		if end >= int64(len(data)) {
+			end = int64(len(data)) - 1
+		}
+		if st, isTarget := stalled[start]; isTarget {
+			mu.Lock()
+			if !st {
+				stalled[start] = true
+				mu.Unlock()
+				writePartialStall(w, start)
+				return
+			}
+			mu.Unlock()
+		}
+		// 正常返回完整段
+		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, len(data)))
+		w.Header().Set("Content-Length", strconv.FormatInt(end-start+1, 10))
+		w.WriteHeader(206)
+		w.Write(data[start : end+1])
+	}
+	srv := httptest.NewServer(http.HandlerFunc(handler))
+	defer srv.Close()
+
+	segSize = 2 << 20 // 2MB 段 -> 8 段
+	stallTimeout = 150 * time.Millisecond
+	defer func() { segSize = 4 << 20; stallTimeout = 15 * time.Second }()
+
+	dest := t.TempDir() + "/out.bin"
+	start := time.Now()
+	err := NewClient().DownloadAssetParallel(newTestAsset(srv.URL), dest, 4, nil)
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatalf("download should succeed via preemption: %v", err)
+	}
+	t.Logf("preemption download in %v (server stall was %v)", elapsed.Round(time.Millisecond), serverStall)
+
+	// 抢占生效的话整体耗时远小于 serverStall（无需等僵死结束）
+	if elapsed > 2*time.Second {
+		t.Fatalf("preemption failed: took %v, want < 2s", elapsed.Round(time.Millisecond))
+	}
+
+	if got := fileSHA(t, dest); got != expectedSHA(data) {
+		t.Fatalf("content mismatch:\n got %s\nwant %s", got, expectedSHA(data))
+	}
+}
