@@ -117,6 +117,19 @@ option specifies a URL to a GPG public key for signature verification.
 .I name
 Remove an entry from the user catalog.
 .TP
+.TP
+.B ghdeb catalog modify
+.I name
+.B \-\-repo
+.I owner/repo
+Modify the repository associated with an existing system catalog entry.
+.TP
+.B ghdeb catalog validate
+.RB [ name ]
+.RB [ \-\-all ]
+Validate catalog entries and remove those that provide no .deb for the
+current architecture. Without arguments, validate all entries; with a
+name, validate only that entry.
 .B ghdeb catalog cleanup
 Remove entries from the user catalog that are identical to entries in the system catalog. This helps keep the user catalog clean and avoids unnecessary duplication.
 .RE
@@ -133,13 +146,7 @@ is an alias for
 .B ghdeb history
 .IB owner / repo
 .PP
-Show the complete operation history (install, upgrade, remove) for a package.
-.SS remove
-.B ghdeb remove
-.IB owner / repo
-.PP
-Mark a package as removed. The package itself is not uninstalled; only the
-ghdeb management record is marked as removed. History is preserved.
+Show the complete operation history (install, upgrade, purge) for a package.
 .SS purge
 .B ghdeb purge
 .I pkg
@@ -158,13 +165,6 @@ Remove cached .deb files from
 Use
 .B \-\-dry\-run
 to preview what would be deleted without actually removing files.
-.SS set\-repo
-.B ghdeb set\-repo
-.I pkg
-.IB owner / repo
-.PP
-Set the GitHub repository for a package that was previously scanned but has
-no repository assigned.
 .SS version
 .B ghdeb version
 .PP

@@ -3,7 +3,7 @@
 # 或: sudo cp ghdeb.fish /usr/share/fish/vendor_completions.d/
 
 # 子命令列表
-set -l subcommands install upgrade reinstall scan search list ls catalog show info history remove rm purge clean set-repo test-homepage version help
+set -l subcommands install upgrade reinstall scan search list ls catalog show info history purge clean test-homepage version help
 
 # 子命令补全
 complete -c ghdeb -f -n "not __fish_seen_subcommand_from $subcommands" \
@@ -50,10 +50,6 @@ complete -c ghdeb -f -n "__fish_seen_subcommand_from reinstall" \
 complete -c ghdeb -f -n "__fish_seen_subcommand_from show info" \
     -a "(__ghdeb_catalog_names) (__ghdeb_installed_packages)"
 
-# remove/rm: 补全已管理的包
-complete -c ghdeb -f -n "__fish_seen_subcommand_from remove rm" \
-    -a "(__ghdeb_installed_packages)"
-
 # purge: 补全已管理的包
 complete -c ghdeb -f -n "__fish_seen_subcommand_from purge" \
     -a "(__ghdeb_installed_packages)"
@@ -77,12 +73,20 @@ complete -c ghdeb -f -n "__fish_seen_subcommand_from clean" \
 # search: 无补全（用户输入搜索词）
 
 # catalog: 子命令补全
-complete -c ghdeb -f -n "__fish_seen_subcommand_from catalog; and not __fish_seen_subcommand_from list show search add delete" \
-    -a "list show search add delete"
+complete -c ghdeb -f -n "__fish_seen_subcommand_from catalog; and not __fish_seen_subcommand_from list show search add modify delete validate" \
+    -a "list show search add modify delete validate"
 
-# catalog show/delete: 补全 catalog 包名
-complete -c ghdeb -f -n "__fish_seen_subcommand_from catalog; and __fish_seen_subcommand_from show delete" \
+# catalog show/delete/validate/modify: 补全 catalog 包名
+complete -c ghdeb -f -n "__fish_seen_subcommand_from catalog; and __fish_seen_subcommand_from show delete validate modify" \
     -a "(__ghdeb_catalog_names)"
+
+# catalog modify: --repo 选项
+complete -c ghdeb -f -n "__fish_seen_subcommand_from catalog; and __fish_seen_subcommand_from modify" \
+    -a "--repo" -d "GitHub 仓库 (owner/repo)"
+
+# catalog validate: --all 选项
+complete -c ghdeb -f -n "__fish_seen_subcommand_from catalog; and __fish_seen_subcommand_from validate" \
+    -a "--all" -d "校验并清洗全部条目"
 
 # catalog add: 选项补全
 complete -c ghdeb -f -n "__fish_seen_subcommand_from catalog; and __fish_seen_subcommand_from add" \

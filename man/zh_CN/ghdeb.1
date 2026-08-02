@@ -107,6 +107,18 @@ ghdeb \- 管理从 GitHub Releases 下载的 .deb 包
 .I 名称
 从用户目录中删除条目。
 .TP
+.TP
+.B ghdeb catalog modify
+.I 名称
+.B \-\-repo
+.I owner/repo
+修改已有系统目录条目对应的仓库。
+.TP
+.B ghdeb catalog validate
+.RB [ 名称 ]
+.RB [ \-\-all ]
+校验目录条目，移除未提供当前架构 .deb 的条目。不指定参数时校验并
+清洗全部条目；指定名称时仅校验该条目。
 .B ghdeb catalog cleanup
 清理用户目录中与系统目录完全相同的条目。避免不必要的重复。
 .RE
@@ -123,12 +135,7 @@ ghdeb \- 管理从 GitHub Releases 下载的 .deb 包
 .B ghdeb history
 .IB owner / repo
 .PP
-显示某个包的完整操作历史（安装、升级、移除）。
-.SS remove
-.B ghdeb remove
-.IB owner / repo
-.PP
-标记包为已移除。包本身不会被卸载，仅将 ghdeb 管理记录标记为移除。历史记录保留。
+显示某个包的完整操作历史（安装、升级、卸载）。
 .SS purge
 .B ghdeb purge
 .I 包名
@@ -147,12 +154,6 @@ ghdeb \- 管理从 GitHub Releases 下载的 .deb 包
 中缓存的 .deb 文件。使用
 .B \-\-dry\-run
 可预览将被删除的文件而不实际删除。
-.SS set\-repo
-.B ghdeb set\-repo
-.I 包名
-.IB owner / repo
-.PP
-为之前扫描但未分配仓库的包设置 GitHub 仓库。
 .SS version
 .B ghdeb version
 .PP

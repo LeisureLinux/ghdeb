@@ -63,6 +63,9 @@ ghdeb catalog add myapp --repo user/myapp --summary "My awesome app"
 # Add a non-GitHub source (direct .deb URL)
 ghdeb catalog add myapp --url "https://example.com/myapp_{version}_{arch}.deb"
 
+# Change the repo of an existing entry
+ghdeb catalog modify myapp --repo user/myapp2
+
 # Remove from user catalog
 ghdeb catalog delete myapp
 ```
@@ -113,20 +116,24 @@ ghdeb upgrade rustdesk
 
 ## How to find unmanaged GitHub .deb packages on my system?
 
-ghdeb relies on `catalog init` + `catalog clean` to build and maintain the package catalog:
+ghdeb relies on `catalog init` + `catalog validate` to build and maintain the package catalog:
 
 ```bash
 # Build the catalog once (scan installed apt GitHub Homepages, no .deb check)
 ghdeb catalog init
 
 # Clean a single entry without a matching-arch .deb
-ghdeb catalog clean <name>
+# Change the GitHub repo behind a catalog entry
+ghdeb catalog modify <name> --repo owner/repo
 
-# Clean the whole catalog (remove every entry without a matching-arch .deb)
-ghdeb catalog clean --all
+# Validate one entry (drop it if no matching-arch .deb exists)
+ghdeb catalog validate <name>
+
+# Validate the whole catalog (drop every entry without a matching-arch .deb)
+ghdeb catalog validate --all
 ```
 
-`catalog init` discovers `.deb` packages installed on your system whose Homepage points to GitHub; `catalog clean` then removes any entries whose latest Release lacks a `.deb` for your architecture.
+`catalog init` discovers `.deb` packages installed on your system whose Homepage points to GitHub; `catalog validate` then removes any entries whose latest Release lacks a `.deb` for your architecture. `catalog modify` lets you repoint an entry to a different GitHub repository.
 
 ## How to view package information?
 

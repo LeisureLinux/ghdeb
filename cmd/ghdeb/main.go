@@ -61,8 +61,6 @@ func main() {
 		err = cmdList(args)
 	case "history":
 		err = cmdHistory(args)
-	case "remove", "rm":
-		err = cmdRemove(args)
 	case "purge":
 		err = cmdPurge(args)
 	case "show":
@@ -73,8 +71,6 @@ func main() {
 		err = cmdClean(args)
 	case "catalog":
 		err = cmdCatalog(args)
-	case "set-repo":
-		err = cmdSetRepo(args)
 	case "test-homepage":
 		err = cmdTestHomepage(args)
 	case "version", "--version", "-v":
@@ -108,15 +104,14 @@ func printUsage() {
   ghdeb catalog show <name>             显示目录条目详情
   ghdeb catalog add <name> --repo <owner/repo>  添加条目到用户目录
   ghdeb catalog delete <name>           从用户目录删除条目
-  ghdeb catalog clean <name>           移除目录中无 .deb 的条目
-  ghdeb catalog clean --all            清洗目录，移除所有无 .deb 的条目
+  ghdeb catalog modify <name> --repo <owner/repo>  修改目录条目的仓库
+  ghdeb catalog validate <name>        校验目录条目（移除无 .deb 的条目）
+  ghdeb catalog validate --all         校验清洗全部条目（移除无 .deb 的条目）
   ghdeb catalog cleanup                 清理用户目录中与系统目录重复的条目
   ghdeb show <pkg>                      显示包的完整信息
   ghdeb history <pkg>                   查看某包的完整操作历史
-  ghdeb remove <pkg>                    标记移除（保留历史记录，不卸载）
   ghdeb purge <pkg>                     卸载软件并清除配置文件
   ghdeb clean [--dry-run]               清理下载的 .deb 缓存
-  ghdeb set-repo <pkg> <owner/repo>     为包设置 GitHub 仓库
   ghdeb info <pkg>                      show 的别名
   ghdeb version                         显示版本
 
@@ -152,15 +147,14 @@ Usage:
   ghdeb catalog show <name>             Show catalog entry details
   ghdeb catalog add <name> --repo <owner/repo>  Add entry to user catalog
   ghdeb catalog delete <name>           Remove entry from user catalog
-  ghdeb catalog clean <name>            Remove entries with no .deb
-  ghdeb catalog clean --all             Clean catalog, remove all entries without .deb
+  ghdeb catalog modify <name> --repo <owner/repo>  Modify catalog entry repo
+  ghdeb catalog validate <name>         Validate entry (remove those with no .deb)
+  ghdeb catalog validate --all          Validate all entries (remove no-.deb)
   ghdeb catalog cleanup                 Clean up duplicate entries from user catalog
   ghdeb show <pkg>                      Show package details
   ghdeb history <pkg>                   View operation history
-  ghdeb remove <pkg>                    Mark as removed (keep history)
   ghdeb purge <pkg>                     Uninstall and purge config
   ghdeb clean [--dry-run]               Clean .deb cache
-  ghdeb set-repo <pkg> <owner/repo>     Set GitHub repo for a package
   ghdeb info <pkg>                      Alias for show
   ghdeb version                         Show version
 
@@ -842,7 +836,7 @@ func cmdShow(args []string) error {
 
 func cmdCatalog(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("请指定子命令: init, list, show, search, add, delete")
+		return fmt.Errorf("请指定子命令: init, list, show, search, add, modify, delete, validate")
 	}
 
 	subcmd := args[0]
@@ -861,10 +855,12 @@ func cmdCatalog(args []string) error {
 		return cmdCatalogAdd(subargs)
 	case "delete", "del", "rm":
 		return cmdCatalogDelete(subargs)
-	case "clean":
-		return cmdCatalogClean(subargs)
+	case "modify":
+		return cmdCatalogModify(subargs)
+	case "validate":
+		return cmdCatalogValidate(subargs)
 	default:
-		return fmt.Errorf("未知子命令: %s（可用: init, list, show, search, add, delete, clean）", subcmd)
+		return fmt.Errorf("未知子命令: %s（可用: init, list, show, search, add, modify, delete, validate）", subcmd)
 	}
 }
 
@@ -1106,9 +1102,9 @@ func cmdCatalogDelete(args []string) error {
 	return nil
 }
 
-// cmdCatalogClean 清洗目录：移除未提供当前架构 .deb 的 GitHub 条目。
-// 支持单包（ghdeb catalog clean <name|owner/repo>）与全量（ghdeb catalog clean --all）。
-func cmdCatalogClean(args []string) error {
+// cmdCatalogValidate 校验目录：移除未提供当前架构 .deb 的 GitHub 条目。
+// 支持单包（ghdeb catalog validate <name|owner/repo>）与全量（ghdeb catalog validate --all）。
+func cmdCatalogValidate(args []string) error {
 	all := false
 	var name string
 	for _, arg := range args {
@@ -1267,8 +1263,8 @@ func cmdCatalogClean(args []string) error {
 	}
 
 	if skippedNet > 0 {
-		fmt.Printf(T("🌐 因网络/API 错误跳过 %d 个条目（已保留，可重跑 clean --all）\n",
-			"🌐 Skipped %d entries due to network/API errors (kept, re-run clean --all)\n"), skippedNet)
+		fmt.Printf(T("🌐 因网络/API 错误跳过 %d 个条目（已保留，可重跑 validate --all）\n",
+			"🌐 Skipped %d entries due to network/API errors (kept, re-run validate --all)\n"), skippedNet)
 	}
 
 	if len(toRemove) == 0 {
@@ -1362,7 +1358,7 @@ func writeSystemCatalog(path string, entries map[string]catalog.CatalogEntry, fi
 	var sb strings.Builder
 	sb.WriteString("# ghdeb 包目录 (Known Packages Catalog)\n")
 	sb.WriteString("# 路径: " + path + "\n#\n")
-	sb.WriteString("# 维护本目录可使用命令：ghdeb catalog init, list, show, search, add, delete\n")
+	sb.WriteString("# 维护本目录可使用命令：ghdeb catalog init, list, show, search, add, modify, delete, validate\n")
 	// 仅维护首次初始化时间：文件已记录则保留原值，否则写当前时间
 	initAt := time.Now().Format("2006-01-02 15:04:05")
 	if data, rErr := os.ReadFile(path); rErr == nil {
@@ -1874,59 +1870,72 @@ func cmdHistory(args []string) error {
 
 // --- remove ---
 
-func cmdRemove(args []string) error {
+
+// cmdCatalogModify 修改目录条目：ghdeb catalog modify <pkgname> --repo <owner/repo>
+func cmdCatalogModify(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("请指定包名，如: ghdeb remove bat")
+		return fmt.Errorf("用法: ghdeb catalog modify <pkgname> --repo <owner/repo>")
 	}
-
-	owner, repo, err := resolvePkgArg(args[0])
-	if err != nil {
+	name := args[0]
+	var repo string
+	for i := 1; i < len(args); i++ {
+		switch args[i] {
+		case "--repo":
+			if i+1 >= len(args) {
+				return fmt.Errorf("--repo 需要参数")
+			}
+			i++
+			repo = args[i]
+		default:
+			return fmt.Errorf("未知选项: %s", args[i])
+		}
+	}
+	if repo == "" {
+		return fmt.Errorf("请指定 --repo <owner/repo>")
+	}
+	if _, _, err := gh.ParseRepo(repo); err != nil {
 		return err
 	}
-	repoKey := owner + "/" + repo
-
-	st, err := state.Load()
-	if err != nil {
+	if err := modifySystemCatalogRepo(name, repo); err != nil {
 		return err
 	}
-	if st.Get(repoKey) == nil {
-		return fmt.Errorf("未找到 %s 的安装记录", repoKey)
-	}
-	st.MarkRemoved(repoKey)
-	if err := st.Save(); err != nil {
-		return err
-	}
-	fmt.Printf(T("✅ 已标记移除 %s（历史记录已保留，软件本身未被卸载）\n", "✅ Marked %s as removed (history preserved, software not uninstalled)\n"), repoKey)
+	fmt.Printf(T("✅ 已更新目录条目 %s 的仓库为 %s\n", "✅ Updated catalog entry %s repo to %s\n"), name, repo)
 	return nil
 }
 
-// --- set-repo ---
-
-func cmdSetRepo(args []string) error {
-	if len(args) < 2 {
-		return fmt.Errorf("用法: ghdeb set-repo <pkg> <owner/repo>")
-	}
-	pkgName := args[0]
-	owner, repo, err := gh.ParseRepo(args[1])
+// modifySystemCatalogRepo 修改系统目录中某条目的 repo 字段
+func modifySystemCatalogRepo(name, repo string) error {
+	path := catalog.SystemCatalogPath()
+	data, err := os.ReadFile(path)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("系统目录不存在: %s", path)
+		}
 		return err
 	}
+	entries := make(map[string]catalog.CatalogEntry)
+	toml.Decode(string(data), &entries)
 
-	st, err := state.Load()
-	if err != nil {
-		return err
+	// 支持短名称和 owner/repo 两种写法
+	key := name
+	entry, ok := entries[key]
+	if !ok {
+		found := ""
+		for k, e := range entries {
+			if e.Repo == name {
+				found = k
+				break
+			}
+		}
+		if found == "" {
+			return fmt.Errorf("目录中未找到 %s", name)
+		}
+		key = found
+		entry = entries[key]
 	}
-
-	if !st.SetRepo(pkgName, owner, repo) {
-		return fmt.Errorf("未找到包 %s", pkgName)
-	}
-
-	if err := st.Save(); err != nil {
-		return fmt.Errorf("保存状态失败: %w", err)
-	}
-
-	fmt.Printf("✅ 已设置 %s 的仓库为 %s/%s\n", pkgName, owner, repo)
-	return nil
+	entry.Repo = repo
+	entries[key] = entry
+	return writeSystemCatalog(path, entries)
 }
 
 // --- test-homepage ---

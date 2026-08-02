@@ -26,6 +26,19 @@ if [ -f /etc/ghdeb/catalog.toml ]; then
     chmod 644 /etc/ghdeb/catalog.toml
 fi
 
+# 自动扫描已装包的 GitHub Homepage，生成/补全 catalog.toml
+# 注：postinst 在 dpkg 提取二进制后执行，/usr/bin/ghdeb 已可用
+# 失败不阻断安装（如无网络时），仅打印提示
+if command -v ghdeb >/dev/null 2>&1; then
+    if ghdeb catalog init >/dev/null 2>&1; then
+        echo "   catalog.toml 已通过 ghdeb catalog init 生成/补全"
+    else
+        echo "   ⚠️  catalog init 未能完成（可能无网络），沿用随包安装的 catalog.toml"
+    fi
+else
+    echo "   ⚠️  未找到 ghdeb 二进制，跳过 catalog init"
+fi
+
 # 迁移旧状态文件（从用户目录迁移到系统目录）
 for home_dir in /home/*; do
     OLD_STATE="$home_dir/.local/state/ghdeb/installed.json"

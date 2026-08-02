@@ -38,10 +38,8 @@ _ghdeb() {
         'show:Show package details'
         'info:Alias for show'
         'history:Show operation history'
-        'remove:Mark a package as removed'
         'purge:Uninstall and purge config'
         'clean:Clean .deb cache'
-        'set-repo:Set GitHub repository for a package'
         'test-homepage:Test homepage for GitHub links'
         'version:Show ghdeb version'
         'help:Show help message'
@@ -63,19 +61,10 @@ _ghdeb() {
                     packages=(${(f)"$(_ghdeb_get_packages)"})
                     _describe -t names 'package' names packages
                     ;;
-                upgrade|reinstall|history|remove|purge)
+                upgrade|reinstall|history|purge)
                     local -a packages
                     packages=(${(f)"$(_ghdeb_get_packages)"})
                     _describe -t packages 'package' packages
-                    ;;
-                set-repo)
-                    if (( CURRENT == 2 )); then
-                        local -a packages
-                        packages=(${(f)"$(_ghdeb_get_packages)"})
-                        _describe -t packages 'package' packages
-                    else
-                        _message 'owner/repo'
-                    fi
                     ;;
                 scan)
                     _arguments '--deep[Fetch Homepage to find GitHub links]'
@@ -92,14 +81,24 @@ _ghdeb() {
                 catalog)
                     if (( CURRENT == 2 )); then
                         local -a subcmds
-                        subcmds=('list:List all entries' 'show:Show entry details' 'search:Search catalog' 'add:Add entry' 'delete:Delete entry')
+                        subcmds=('list:List all entries' 'show:Show entry details' 'search:Search catalog' 'add:Add entry' 'modify:Modify entry repo' 'delete:Delete entry' 'validate:Validate entries')
                         _describe -t subcmds 'catalog subcommand' subcmds
                     else
                         case $words[2] in
-                            show|delete)
+                            show|delete|validate|modify)
                                 local -a names
                                 names=(${(f)"$(_ghdeb_get_catalog_names)"})
                                 _describe -t names 'name' names
+                                ;;
+                            modify)
+                                if (( CURRENT > 3 )); then
+                                    _arguments '--repo[GitHub repository (owner/repo)]:'
+                                fi
+                                ;;
+                            validate)
+                                if (( CURRENT == 3 )); then
+                                    _arguments '--all[Validate all entries]'
+                                fi
                                 ;;
                             add)
                                 if (( CURRENT == 3 )); then

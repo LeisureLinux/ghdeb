@@ -288,39 +288,6 @@ func MergeOrphansToState(st *State, orphans []OrphanPackage) int {
 	return added
 }
 
-// SetRepo 为包设置仓库信息
-func (s *State) SetRepo(pkgName, owner, repo string) bool {
-	// 先找到这个包
-	rec := s.GetByPkgName(pkgName)
-	if rec == nil {
-		return false
-	}
-
-	// 找到旧的 key
-	var oldKey string
-	for k, v := range s.Packages {
-		if v == rec {
-			oldKey = k
-			break
-		}
-	}
-
-	// 更新记录
-	rec.Owner = owner
-	rec.Repo = repo
-
-	// 如果 key 需要改变（从 pkgName 改为 owner/repo）
-	newKey := owner + "/" + repo
-	if oldKey != newKey {
-		// 删除旧 key
-		delete(s.Packages, oldKey)
-		// 添加新 key
-		s.Packages[newKey] = rec
-	}
-
-	return true
-}
-
 // GetByPkgName 根据包名查找记录
 func (s *State) GetByPkgName(pkgName string) *PackageRecord {
 	for _, rec := range s.Packages {

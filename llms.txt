@@ -10,8 +10,8 @@
 - `ghdeb list [--refresh]`: List all managed packages with recorded, system, and latest versions.
 - `ghdeb info <owner/repo or pkgname>`: Show latest release information without installing.
 - `ghdeb history <owner/repo>`: Show full operation history for a package.
-- `ghdeb remove <owner/repo>`: Mark a package as removed (keeps history).
-- `ghdeb set-repo <pkg> <owner/repo>`: Associate a system package with a GitHub repository.
+- `ghdeb catalog modify <pkgname> --repo <owner/repo>`: Repoint an existing catalog entry to a different GitHub repository.
+- `ghdeb catalog validate [name] [--all]`: Validate catalog entries, removing any without a matching-arch `.deb`.
 
 ## Key Features
 

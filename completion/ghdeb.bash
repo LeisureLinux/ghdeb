@@ -31,7 +31,7 @@ _ghdeb() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
     
-    commands="install upgrade reinstall scan search list ls catalog show info history remove rm purge clean set-repo test-homepage version help"
+    commands="install upgrade reinstall scan search list ls catalog show info history purge clean test-homepage version help"
     
     # 第一个参数：补全顶级子命令
     if [ $COMP_CWORD -eq 1 ]; then
@@ -47,7 +47,7 @@ _ghdeb() {
             pkgs=$(_ghdeb_get_packages)
             COMPREPLY=( $(compgen -W "$names $pkgs" -- "$cur") )
             ;;
-        upgrade|reinstall|history|remove|rm|purge)
+        upgrade|reinstall|history|purge)
             COMPREPLY=( $(compgen -W "$(_ghdeb_get_packages)" -- "$cur") )
             ;;
         scan)
@@ -64,7 +64,7 @@ _ghdeb() {
             ;;
         catalog)
             # catalog 子命令补全
-            local catalog_subcmds="list show search add delete"
+            local catalog_subcmds="list show search add modify delete validate"
             
             # 第二个参数：补全 catalog 子命令
             if [ $COMP_CWORD -eq 2 ]; then
@@ -74,10 +74,20 @@ _ghdeb() {
             
             # 第三个及以后参数：根据 catalog 子命令补全
             case "${COMP_WORDS[2]}" in
-                show|delete)
+                show|delete|validate|modify)
                     local names
                     names=$(_ghdeb_get_catalog_names)
                     COMPREPLY=( $(compgen -W "$names" -- "$cur") )
+                    ;;
+                modify)
+                    if [ $COMP_CWORD -ge 4 ]; then
+                        COMPREPLY=( $(compgen -W "--repo" -- "$cur") )
+                    fi
+                    ;;
+                validate)
+                    if [ $COMP_CWORD -eq 3 ]; then
+                        COMPREPLY=( $(compgen -W "--all" -- "$cur") )
+                    fi
                     ;;
                 add)
                     # 第四个参数开始补全选项
