@@ -7,15 +7,22 @@ set -e
 # 创建必要的目录
 mkdir -p /etc/ghdeb
 mkdir -p /var/cache/ghdeb
-mkdir -p /usr/share/man/man1
-mkdir -p /usr/share/man/zh_CN/man1
-mkdir -p /usr/share/bash-completion/completions
-mkdir -p /usr/share/zsh/site-functions
-mkdir -p /usr/share/fish/vendor_completions.d
+mkdir -p /usr/share/ghdeb/hooks
 
-# 确保状态文件存在（首次安装）
+# 设置目录权限：所有用户可写（sticky bit，类似 /tmp）
+chmod 1777 /var/cache/ghdeb
+
+# 确保状态文件存在且可写（首次安装）
 if [ ! -f /var/cache/ghdeb/installed.json ]; then
     echo '{"packages":{}}' > /var/cache/ghdeb/installed.json
+fi
+chmod 666 /var/cache/ghdeb/installed.json
+
+# 如果存在旧状态文件，迁移过来
+OLD_STATE="$HOME/.local/state/ghdeb/installed.json"
+if [ -f "$OLD_STATE" ] && [ ! -s /var/cache/ghdeb/installed.json ]; then
+    cp "$OLD_STATE" /var/cache/ghdeb/installed.json
+    chmod 666 /var/cache/ghdeb/installed.json
 fi
 
 # 安装 dpkg hook 脚本用于监控软件包删除
