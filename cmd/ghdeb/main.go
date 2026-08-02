@@ -103,7 +103,7 @@ func printUsage() {
   ghdeb install <pkg|owner/repo>[@tag]  安装（支持短名称或 owner/repo）
   ghdeb upgrade [pkg]                   升级包（不指定则升级所有）
   ghdeb reinstall <pkg>                 重新安装指定包
-  ghdeb scan [--deep [pkg|--all]]                   扫描系统中的 GitHub 孤立包并纳入管理
+  ghdeb scan [--deep pkg]                   扫描系统中的 GitHub 孤立包并纳入管理
   ghdeb search <pattern>                在包目录中搜索
   ghdeb list [--refresh]                列出所有已管理的包
   ghdeb catalog init                    一次性建立目录（扫描已装包的 GitHub Homepage，不校验 .deb）
@@ -111,6 +111,8 @@ func printUsage() {
   ghdeb catalog show <name>             显示目录条目详情
   ghdeb catalog add <name> --repo <owner/repo>  添加条目到用户目录
   ghdeb catalog delete <name>           从用户目录删除条目
+  ghdeb catalog clean <name>           移除目录中无 .deb 的条目
+  ghdeb catalog clean --all            清洗目录，移除所有无 .deb 的条目
   ghdeb catalog cleanup                 清理用户目录中与系统目录重复的条目
   ghdeb show <pkg>                      显示包的完整信息
   ghdeb history <pkg>                   查看某包的完整操作历史
@@ -146,7 +148,7 @@ Usage:
   ghdeb install <pkg|owner/repo>[@tag]  Install (short name or owner/repo)
   ghdeb upgrade [pkg]                   Upgrade packages (all if unspecified)
   ghdeb reinstall <pkg>                 Reinstall a package
-  ghdeb scan [--deep [pkg|--all]]                   Scan system for GitHub orphan packages
+  ghdeb scan [--deep pkg]                   Scan system for GitHub orphan packages
   ghdeb search <pattern>                Search in package catalog
   ghdeb list [--refresh]                List managed packages
   ghdeb catalog init                    Build catalog once (scan installed GitHub Homepages, no .deb check)
@@ -154,6 +156,8 @@ Usage:
   ghdeb catalog show <name>             Show catalog entry details
   ghdeb catalog add <name> --repo <owner/repo>  Add entry to user catalog
   ghdeb catalog delete <name>           Remove entry from user catalog
+  ghdeb catalog clean <name>            Remove entries with no .deb
+  ghdeb catalog clean --all             Clean catalog, remove all entries without .deb
   ghdeb catalog cleanup                 Clean up duplicate entries from user catalog
   ghdeb show <pkg>                      Show package details
   ghdeb history <pkg>                   View operation history
@@ -841,8 +845,10 @@ func cmdCatalog(args []string) error {
 		return cmdCatalogAdd(subargs)
 	case "delete", "del", "rm":
 		return cmdCatalogDelete(subargs)
+	case "clean":
+		return cmdCatalogClean(subargs)
 	default:
-		return fmt.Errorf("未知子命令: %s（可用: init, list, show, search, add, delete）", subcmd)
+		return fmt.Errorf("未知子命令: %s（可用: init, list, show, search, add, delete, clean）", subcmd)
 	}
 }
 
@@ -1081,6 +1087,137 @@ func cmdCatalogDelete(args []string) error {
 	}
 
 	fmt.Printf(T("✅ 已从系统目录删除 %s\n", "✅ Deleted %s from system catalog\n"), name)
+	return nil
+}
+
+// cmdCatalogClean 清洗目录：移除未提供当前架构 .deb 的 GitHub 条目。
+// 支持单包（ghdeb catalog clean <name|owner/repo>）与全量（ghdeb catalog clean --all）。
+func cmdCatalogClean(args []string) error {
+	all := false
+	var name string
+	for _, arg := range args {
+		switch arg {
+		case "--all", "-a":
+			all = true
+		default:
+			if strings.HasPrefix(arg, "-") {
+				// 忽略未知选项
+			} else if name == "" {
+				name = arg
+			}
+		}
+	}
+
+	if !all && name == "" {
+		return fmt.Errorf("请指定包名，或用 --all 清理目录中所有无 .deb 的条目")
+	}
+
+	// 加载系统目录
+	cat, err := catalog.Load()
+	if err != nil {
+		return fmt.Errorf("加载目录失败: %w", err)
+	}
+	entries := cat.AllEntries()
+	if len(entries) == 0 {
+		fmt.Println(T("目录为空", "Catalog is empty"))
+		return nil
+	}
+
+	// 确定待检测的条目集合（短名称 -> 条目）
+	candidates := make(map[string]*catalog.CatalogEntry)
+	if all {
+		for k, e := range entries {
+			candidates[k] = e
+		}
+	} else {
+		// 支持短名称或 owner/repo 两种写法
+		entry := entries[name]
+		if entry == nil {
+			for k, e := range entries {
+				if e.Repo == name {
+					entry = e
+					name = k
+					break
+				}
+			}
+		}
+		if entry == nil {
+			return fmt.Errorf("系统目录中未找到 %s", name)
+		}
+		candidates[name] = entry
+	}
+
+	if all {
+		fmt.Println(T("🔍 清洗目录：检查所有条目是否提供当前架构的 .deb ...",
+			"🔍 Cleaning catalog: checking all entries provide a current-arch .deb ..."))
+	} else {
+		fmt.Printf(T("🔍 清洗目录：检查 %s 是否提供当前架构的 .deb ...\n",
+			"🔍 Cleaning catalog: checking %s provides a current-arch .deb ...\n"), name)
+	}
+
+	arch, aErr := deb.DetectArch()
+	if aErr != nil {
+		return fmt.Errorf("检测系统架构失败: %w", aErr)
+	}
+
+	names := make([]string, 0, len(candidates))
+	for k := range candidates {
+		names = append(names, k)
+	}
+	sort.Strings(names)
+
+	toRemove := make(map[string]bool)
+	for _, k := range names {
+		e := candidates[k]
+		// ghdeb 自身永远保留
+		if k == "ghdeb" {
+			continue
+		}
+		// 非 GitHub 直接 URL 条目无法校验 .deb，保留不动
+		if e.IsDirectURL() || e.Repo == "" {
+			continue
+		}
+		owner, repo, perr := gh.ParseRepo(e.Repo)
+		if perr != nil {
+			continue
+		}
+		fmt.Printf("检查 %s（%s）...\n", k, e.Repo)
+		if repoHasDeb(owner, repo) {
+			fmt.Printf("  ✅ 最新 Release 提供 %s 架构的 .deb，保留\n", arch.DpkgArch)
+		} else {
+			fmt.Printf("  ⚠️  最新 Release 无 %s 架构的 .deb，将从目录删除\n", arch.DpkgArch)
+			toRemove[k] = true
+		}
+	}
+
+	if len(toRemove) == 0 {
+		if all {
+			fmt.Println(T("✅ 目录中所有条目均提供 .deb，无需清理", "✅ All catalog entries provide .deb, nothing to clean"))
+		} else {
+			fmt.Println(T("✅ 该条目提供 .deb，无需清理", "✅ This entry provides .deb, nothing to clean"))
+		}
+		return nil
+	}
+
+	// 从目录中删除并写回
+	path := catalog.SystemCatalogPath()
+	data, rErr := os.ReadFile(path)
+	if rErr != nil {
+		return fmt.Errorf("读取目录失败: %w", rErr)
+	}
+	var current map[string]catalog.CatalogEntry
+	toml.Decode(string(data), &current)
+	for k := range toRemove {
+		delete(current, k)
+	}
+	if err := writeSystemCatalog(path, current, "ghdeb"); err != nil {
+		return fmt.Errorf("写入目录失败: %w", err)
+	}
+
+	fmt.Printf(T("✅ 已从目录清理 %d 个无 .deb 的条目\n", "✅ Removed %d entries without .deb from catalog\n"), len(toRemove))
+	for k := range toRemove {
+		fmt.Printf("  - %s\n", k)
+	}
 	return nil
 }
 
@@ -1368,14 +1505,11 @@ func cmdScan(args []string) error {
 	}
 
 	deepScan := false
-	allDeep := false
 	targetPkg := ""
 	for _, arg := range args {
 		switch arg {
 		case "--deep":
 			deepScan = true
-		case "--all", "-a":
-			allDeep = true
 		default:
 			if strings.HasPrefix(arg, "-") {
 				// 忽略未知选项
@@ -1384,20 +1518,12 @@ func cmdScan(args []string) error {
 			}
 		}
 	}
-	// deep 实际启用条件：--deep 且（--all 或指定了包名）
-	aptDeep := deepScan && (allDeep || targetPkg != "")
+	// deep 实际启用条件：--deep 且指定了包名
+	aptDeep := deepScan && targetPkg != ""
 
 	if aptDeep {
-		if targetPkg != "" {
-			fmt.Printf(T("🔍 深度扫描 %s（孤立包 + apt GitHub 检测）...\n",
-				"🔍 Deep scanning %s (orphan + apt GitHub detection)...\n"), targetPkg)
-		} else if allDeep {
-			fmt.Println(T("🔍 深度扫描系统全部 apt 包（孤立包 + apt GitHub 检测）...",
-				"🔍 Deep scanning all apt packages (orphan + apt GitHub detection)..."))
-		} else {
-			fmt.Println(T("🔍 深度扫描系统（孤立包 + apt 包的 GitHub Homepage）...",
-				"🔍 Deep scanning system (orphan packages + apt GitHub Homepage)..."))
-		}
+		fmt.Printf(T("🔍 深度扫描 %s（孤立包 + apt GitHub 检测）...\n",
+			"🔍 Deep scanning %s (orphan + apt GitHub detection)...\n"), targetPkg)
 	} else {
 		fmt.Println(T("🔍 扫描系统中的孤立包（无 apt 源）...", "🔍 Scanning orphan packages (no apt source)..."))
 		fmt.Println(T("   提示: 使用 --deep 参数可进行深度扫描（含 apt 包 GitHub 检测）", "   Hint: Use --deep for deep scan (includes apt GitHub detection)"))
