@@ -18,10 +18,23 @@ import (
 	"github.com/leisurelinux/ghdeb/internal/state"
 )
 
-const version = "0.6.7"
+const version = "0.6.8"
 
 func main() {
-	fmt.Printf(T("ghdeb v%s - 管理从 GitHub Releases 下载的 .deb 包 © LeisureLinux\n", "ghdeb v%s - manage .deb packages downloaded from GitHub Releases © LeisureLinux\n"), version)
+	// 检查是否使用 --json，如果是则不打印 banner
+	jsonMode := false
+	if len(os.Args) >= 2 && (os.Args[1] == "list" || os.Args[1] == "ls" || os.Args[1] == "show") {
+		for _, arg := range os.Args[2:] {
+			if arg == "--json" {
+				jsonMode = true
+				break
+			}
+		}
+	}
+	
+	if !jsonMode {
+		fmt.Printf(T("ghdeb v%s - 管理从 GitHub Releases 下载的 .deb 包 © LeisureLinux\n", "ghdeb v%s - manage .deb packages downloaded from GitHub Releases © LeisureLinux\n"), version)
+	}
 
 	if len(os.Args) < 2 {
 		printUsage()
