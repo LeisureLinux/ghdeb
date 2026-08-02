@@ -40,18 +40,30 @@ again. The history entry is marked as a reinstall.
 .PP
 Search the package catalog by name, pretty name, or summary. Supports
 regular expressions.
+.SS update
+.B ghdeb update
+.PP
+Similar to
+.B apt update
+. Queries the latest version from GitHub and the locally installed version for
+each catalog entry, determines whether it is upgradeable, validates and removes
+catalog entries without a .deb package for the current architecture, and writes
+the results to a local snapshot (~/.cache/ghdeb/snapshot.json). After this,
+.B ghdeb list
+reads only that snapshot and does not query the network.
 .SS list
 .B ghdeb list
 .RB [ \-\-json ]
 .PP
-List all catalog entries. Shows short name, repo, installed version, and the
-latest version from GitHub. Both installed and latest versions prefer a
-24-hour local cache; they are queried from dpkg / GitHub only when the cache
-is missing or expired, then written back. Entries whose installed version is
-older than the latest are flagged as upgradeable.
+List all catalog entries, reading only the local snapshot produced by
+.B ghdeb update
+without hitting the network. Shows short name, repo, installed version, and the
+latest version. Entries whose installed version is older than the latest are
+flagged as upgradeable. Version columns show "-" when update has not been run.
 .TP
 .B \-\-json
 Output the list as JSON.
+
 .SS catalog
 .B ghdeb catalog
 .I subcommand
@@ -251,6 +263,9 @@ Install the latest version of ghdeb.
 .TP
 .B ghdeb install LeisureLinux/ghdeb@v0.6.0
 Install a specific version of ghdeb.
+.TP
+.B ghdeb update
+Refresh latest/installed version info into local snapshot.
 .TP
 .B ghdeb upgrade
 Upgrade all managed packages.

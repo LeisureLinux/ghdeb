@@ -29,6 +29,7 @@ _ghdeb() {
     local -a commands
     commands=(
         'install:Install or upgrade a package'
+        'update:Refresh version info to local snapshot'
         'upgrade:Upgrade managed packages'
         'reinstall:Force reinstall a package'
         'scan:Scan system for GitHub orphan packages'

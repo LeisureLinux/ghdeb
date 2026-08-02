@@ -31,7 +31,7 @@ _ghdeb() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
     
-    commands="install upgrade reinstall scan search list ls catalog show info history purge clean test-homepage version help"
+    commands="install update upgrade reinstall scan search list ls catalog show info history purge clean test-homepage version help"
     
     # 第一个参数：补全顶级子命令
     if [ $COMP_CWORD -eq 1 ]; then

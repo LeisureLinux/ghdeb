@@ -7,8 +7,8 @@
 
 ```bash
 ghdeb install LeisureLinux/ghdeb      # install latest ghdeb
-ghdeb upgrade                         # upgrade all managed packages
-ghdeb list                            # list all catalog entries (installed/latest version)
+ghdeb update                          # refresh version info to local snapshot (like apt update)
+ghdeb list                            # list all catalog entries (reads local snapshot)
 ```
 
 ## What problem does ghdeb solve?
@@ -50,7 +50,8 @@ ghdeb install gh                      # → cli/cli
 
 # Search the catalog
 ghdeb search monitor                  # regex search by name/summary
-ghdeb list                           # list all catalog entries
+ghdeb update                          # refresh version info to local snapshot
+ghdeb list                           # list all catalog entries (reads local snapshot)
 ghdeb catalog show bat                # show entry details
 ```
 
@@ -101,7 +102,25 @@ ghdeb install LeisureLinux/ghdeb@v0.6.0
 
 ghdeb automatically detects your system architecture (`dpkg --print-architecture`) and selects the matching `.deb` asset from the release.
 
+## How to refresh version info?
+
+`ghdeb update` works like `apt update`: it queries each catalog entry's latest
+version from GitHub, checks the locally installed version, determines which
+packages are upgradeable, and removes catalog entries that no longer provide a
+`.deb` for your architecture. The results are saved to a local snapshot
+(`~/.cache/ghdeb/snapshot.json`), and `ghdeb list` reads only that snapshot
+without hitting the network.
+
+```bash
+# Refresh version info and prune stale entries
+ghdeb update
+
+# List entries (reads the local snapshot, no network)
+ghdeb list
+```
+
 ## How to upgrade all GitHub-sourced packages?
+
 
 ```bash
 # Upgrade everything ghdeb manages
@@ -137,7 +156,10 @@ ghdeb catalog validate --all
 # Show latest release info (without installing)
 ghdeb info LeisureLinux/ghdeb
 
-# List all managed packages with versions
+# Refresh version info (GitHub latest + installed) into local snapshot
+ghdeb update
+
+# List all managed packages with versions (reads local snapshot)
 ghdeb list
 
 # View operation history for a package

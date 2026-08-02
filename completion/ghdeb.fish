@@ -3,7 +3,7 @@
 # 或: sudo cp ghdeb.fish /usr/share/fish/vendor_completions.d/
 
 # 子命令列表
-set -l subcommands install upgrade reinstall scan search list ls catalog show info history purge clean test-homepage version help
+set -l subcommands install update upgrade reinstall scan search list ls catalog show info history purge clean test-homepage version help
 
 # 子命令补全
 complete -c ghdeb -f -n "not __fish_seen_subcommand_from $subcommands" \

@@ -5,9 +5,9 @@
 ## Core Commands
 
 - `ghdeb install <owner/repo>[@tag]`: Install or upgrade a package from GitHub Releases. Auto-detects architecture and selects the matching .deb asset.
-- `ghdeb upgrade [owner/repo]`: Upgrade all managed packages, or a specific one. Auto-scans for orphan packages before upgrading.
-- `ghdeb scan [--deep]`: Discover orphan .deb packages on the system (installed .deb with no apt source). --deep fetches Homepage URLs to find GitHub links.
-- `ghdeb list [--refresh]`: List all managed packages with recorded, system, and latest versions.
+- `ghdeb update`: Refresh version info like `apt update` — query latest version from GitHub, check locally installed version, determine upgradeability, and prune catalog entries without a matching-arch `.deb`. Writes results to a local snapshot.
+- `ghdeb upgrade [owner/repo]`: Upgrade all managed packages, or a specific one.
+- `ghdeb list [--json]`: List all catalog entries, reading only the local snapshot produced by `ghdeb update` (no network).
 - `ghdeb info <owner/repo or pkgname>`: Show latest release information without installing.
 - `ghdeb history <owner/repo>`: Show full operation history for a package.
 - `ghdeb catalog modify <pkgname> --repo <owner/repo>`: Repoint an existing catalog entry to a different GitHub repository.
@@ -43,8 +43,9 @@ ghdeb upgrade
 ghdeb scan --deep
 ```
 
-### Check what's installed
+### Refresh version info, then list what's installed
 ```
+ghdeb update
 ghdeb list
 ```
 
@@ -53,6 +54,7 @@ ghdeb list
 - Written in Go, single binary, no runtime dependencies.
 - Uses GitHub REST API (unauthenticated: 60 req/hr, with GITHUB_TOKEN: 5000 req/hr).
 - Release metadata cached for 24 hours in `~/.cache/ghdeb/releases.json`.
+- List snapshot cached in `~/.cache/ghdeb/snapshot.json` (written by `ghdeb update`, read by `ghdeb list`).
 - Package state tracked in `/var/cache/ghdeb/installed.json`.
 
 ## How it differs from alternatives

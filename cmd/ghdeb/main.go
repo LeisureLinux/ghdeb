@@ -54,6 +54,8 @@ func main() {
 		err = cmdInstall(args)
 	case "upgrade":
 		err = cmdUpgrade(args)
+	case "update":
+		err = cmdUpdate(args)
 	case "reinstall":
 		err = cmdReinstall(args)
 	case "search":
@@ -96,10 +98,11 @@ func printUsage() {
 
 用法:
   ghdeb install <pkg|owner/repo>[@tag]  安装（支持短名称或 owner/repo）
+  ghdeb update                          刷新各包最新/已装版本信息到本地快照（类 apt update）
   ghdeb upgrade [pkg]                   升级包（不指定则升级所有）
   ghdeb reinstall <pkg>                 重新安装指定包
   ghdeb search <pattern>                在包目录中搜索
-  ghdeb list [--json]                 列出目录所有条目，含已装/最新版本(本地+GitHub缓存)
+  ghdeb list [--json]                 列出目录所有条目（读取 update 生成的本地快照）
   ghdeb catalog show <name>             显示目录条目详情
   ghdeb catalog add <name> --repo <owner/repo>  添加条目到系统目录
   ghdeb catalog delete <name>           从系统目录删除条目
@@ -123,6 +126,7 @@ func printUsage() {
   ghdeb install bat                     通过短名称安装 bat
   ghdeb install sharkdp/bat             通过 owner/repo 安装
   ghdeb install LeisureLinux/ghdeb@v0.6.0  安装指定版本
+  ghdeb update                          刷新版本信息后再 list
   ghdeb search monitor                  搜索包含 monitor 的包
   ghdeb catalog add myapp --repo user/myapp --summary "我的应用"
   ghdeb show rustdesk                   显示包信息
@@ -134,10 +138,11 @@ func printUsage() {
 
 Usage:
   ghdeb install <pkg|owner/repo>[@tag]  Install (short name or owner/repo)
+  ghdeb update                          Refresh latest/installed version info into local snapshot (like apt update)
   ghdeb upgrade [pkg]                   Upgrade packages (all if unspecified)
   ghdeb reinstall <pkg>                 Reinstall a package
   ghdeb search <pattern>                Search in package catalog
-  ghdeb list [--json]                  List all catalog entries, with installed/latest version
+  ghdeb list [--json]                  List all catalog entries (reads local update snapshot)
   ghdeb catalog show <name>             Show catalog entry details
   ghdeb catalog add <name> --repo <owner/repo>  Add entry to system catalog
   ghdeb catalog delete <name>           Remove entry from system catalog
@@ -160,6 +165,7 @@ Environment Variables:
 Examples:
   ghdeb install bat                     Install via short name
   ghdeb install sharkdp/bat             Install via owner/repo
+  ghdeb update                          Refresh version info before list
   ghdeb install LeisureLinux/ghdeb@v0.6.0  Install specific version
   ghdeb search monitor                  Search catalog
   ghdeb catalog add myapp --repo user/myapp --summary "My app"
@@ -1531,70 +1537,20 @@ func cmdList(args []string) error {
 		}
 	}
 
-	// 加载 catalog（纯本地）
+	// 加载 catalog（纯本地，仅用于名称/仓库/URL 展示）
 	cat, err := catalog.Load()
 	if err != nil {
 		return fmt.Errorf("加载目录失败: %w", err)
 	}
-
 	entries := cat.AllEntries()
-	if len(entries) == 0 {
+
+	// 只读快照缓冲（由 ghdeb update 生成）
+	snap := state.LoadSnapshot()
+
+	names := cat.SortedNames()
+	if len(names) == 0 {
 		fmt.Println(T("目录为空", "Catalog is empty"))
 		return nil
-	}
-
-	st, _ := state.Load()
-	names := cat.SortedNames()
-	client := gh.NewClient()
-
-	// 收集需要实时查询最新版本的仓库（有 repo 且缓存未命中 24h TTL）
-	type task struct{ owner, repo string }
-	var tasks []task
-	latestVer := make(map[string]string) // key = "owner/repo"
-	for _, name := range names {
-		entry := entries[name]
-		if entry.Repo == "" {
-			continue
-		}
-		owner, repo, perr := gh.ParseRepo(entry.Repo)
-		if perr != nil {
-			continue
-		}
-		if v := client.GetCachedRelease(owner, repo); v != "" {
-			latestVer[owner+"/"+repo] = v
-		} else {
-			tasks = append(tasks, task{owner, repo})
-		}
-	}
-
-	// 并发查询未命中缓存的仓库，避免逐个串行拖慢 list
-	if len(tasks) > 0 {
-		var wg sync.WaitGroup
-		var mu sync.Mutex
-		sem := make(chan struct{}, 8) // 限流，避免触发 GitHub API 限流
-		for _, t := range tasks {
-			wg.Add(1)
-			go func(t task) {
-				defer wg.Done()
-				sem <- struct{}{}
-				defer func() { <-sem }()
-				rel, relErr := client.GetLatestRelease(t.owner, t.repo)
-				if relErr != nil {
-					return // 网络/API 错误或无常稳定版：跳过，展示 "-"
-				}
-				mu.Lock()
-				latestVer[t.owner+"/"+t.repo] = rel.TagName
-				mu.Unlock()
-			}(t)
-		}
-		wg.Wait()
-		// 统一回填 24h 缓存（主协程串行写入，避免并发写文件竞态）
-		for key, v := range latestVer {
-			parts := strings.SplitN(key, "/", 2)
-			if len(parts) == 2 {
-				client.SetCachedRelease(parts[0], parts[1], v)
-			}
-		}
 	}
 
 	// JSON 输出结构
@@ -1625,39 +1581,19 @@ func cmdList(args []string) error {
 			repoOrURL = truncate(entry.URL, 23)
 		}
 
-		// 已装版本：优先 24h 缓存，未命中/过期才实查 dpkg 并回填缓存
+		// 从快照读取（未在快照中视为无数据）
+		sn := snap.Get(name)
 		installed := false
 		installedVer := ""
-		if st != nil && entry.Repo != "" {
-			rec := st.Get(entry.Repo)
-			if rec != nil && !rec.Removed {
-				installed = true
-				pkg := rec.PkgName
-				if pkg == "" {
-					pkg = rec.Repo
-				}
-				installedVer = state.GetCachedInstalled(pkg)
-				if installedVer == "" {
-					installedVer = state.QuerySystemVersion(pkg)
-					if installedVer != "" {
-						state.SetCachedInstalled(pkg, installedVer)
-					}
-				}
-			}
-		}
-
-		// 最新版本：优先 24h 缓存，未命中走并发查询结果
 		latest := ""
-		if entry.Repo != "" {
-			owner, repo, perr := gh.ParseRepo(entry.Repo)
-			if perr == nil {
-				latest = latestVer[owner+"/"+repo]
-			}
+		upgradeable := false
+		if sn != nil {
+			installed = sn.Installed
+			installedVer = sn.InstalledVersion
+			latest = sn.LatestVersion
+			upgradeable = sn.Upgradeable
 		}
 
-		// 状态：未装 / 可升级 / 已装
-		upgradeable := installed && installedVer != "" && latest != "" &&
-			compareVersion(installedVer, latest) < 0
 		status := ""
 		switch {
 		case !installed:
@@ -1696,6 +1632,178 @@ func cmdList(args []string) error {
 		fmt.Printf(T("共 %d 个条目\n", "Total %d entries\n"), len(names))
 	}
 	return nil
+}
+
+// cmdUpdate 类似 apt update：查询各包最新版本、本地已装版本，判定可升级性，
+// 校验并移除无 .deb 的目录条目，把结果写入 list 快照缓冲文件。
+func cmdUpdate(args []string) error {
+	cat, err := catalog.Load()
+	if err != nil {
+		return fmt.Errorf("加载目录失败: %w", err)
+	}
+	entries := cat.AllEntries()
+	if len(entries) == 0 {
+		fmt.Println(T("目录为空，无需更新", "Catalog is empty, nothing to update"))
+		return nil
+	}
+
+	st, _ := state.Load()
+	client := gh.NewClient()
+	names := cat.SortedNames()
+
+	// 1) 收集需要实时查询最新版本的仓库（快照/缓存未命中才查 GitHub）
+	type task struct{ name, owner, repo string }
+	var tasks []task
+	latestVer := make(map[string]string) // key = "owner/repo"
+	for _, name := range names {
+		entry := entries[name]
+		if entry.Repo == "" {
+			continue
+		}
+		owner, repo, perr := gh.ParseRepo(entry.Repo)
+		if perr != nil {
+			continue
+		}
+		if v := client.GetCachedRelease(owner, repo); v != "" {
+			latestVer[owner+"/"+repo] = v
+		} else {
+			tasks = append(tasks, task{name, owner, repo})
+		}
+	}
+
+	// 并发查询未命中缓存的仓库
+	if len(tasks) > 0 {
+		var wg sync.WaitGroup
+		var mu sync.Mutex
+		sem := make(chan struct{}, 8)
+		for _, t := range tasks {
+			wg.Add(1)
+			go func(t task) {
+				defer wg.Done()
+				sem <- struct{}{}
+				defer func() { <-sem }()
+				rel, relErr := client.GetLatestRelease(t.owner, t.repo)
+				if relErr != nil {
+					return
+				}
+				mu.Lock()
+				latestVer[t.owner+"/"+t.repo] = rel.TagName
+				mu.Unlock()
+			}(t)
+		}
+		wg.Wait()
+		for key, v := range latestVer {
+			parts := strings.SplitN(key, "/", 2)
+			if len(parts) == 2 {
+				client.SetCachedRelease(parts[0], parts[1], v)
+			}
+		}
+	}
+
+	// 2) 校验并移除无当前架构 .deb 的条目（写入系统目录）
+	path := catalog.SystemCatalogPath()
+	curData, rErr := os.ReadFile(path)
+	if rErr != nil {
+		return fmt.Errorf("读取目录失败: %w", rErr)
+	}
+	current := make(map[string]catalog.CatalogEntry)
+	toml.Decode(string(curData), &current)
+
+	removed := 0
+	removedNames := make([]string, 0)
+	for _, name := range names {
+		e := entries[name]
+		// ghdeb 自身与直接 URL 条目保留
+		if name == "ghdeb" || e.IsDirectURL() || e.Repo == "" {
+			continue
+		}
+		owner, repo, perr := gh.ParseRepo(e.Repo)
+		if perr != nil {
+			continue
+		}
+		has, cErr := checkRepoDeb(owner, repo)
+		if cErr != nil {
+			continue // 网络/API 错误：保留，避免误删
+		}
+		if !has {
+			removed++
+			removedNames = append(removedNames, name)
+			delete(current, name)
+		}
+	}
+	if removed > 0 {
+		if err := writeSystemCatalog(path, current, "ghdeb"); err != nil {
+			return fmt.Errorf("写入目录失败: %w", err)
+		}
+	}
+
+	// 3) 组装并写回快照
+	snap := state.LoadSnapshot()
+	snap.UpdatedAt = time.Now().Format(time.RFC3339)
+
+	for _, name := range names {
+		// 已因无 .deb 被移除的条目不进快照
+		if containsStr(removedNames, name) {
+			snap.Remove(name)
+			continue
+		}
+		entry := entries[name]
+
+		sp := &state.SnapshotPkg{Repo: entry.Repo}
+
+		// 已装版本：优先已装缓存，未命中/过期才实查 dpkg 并回填缓存
+		if st != nil && entry.Repo != "" {
+			rec := st.Get(entry.Repo)
+			if rec != nil && !rec.Removed {
+				sp.Installed = true
+				pkg := rec.PkgName
+				if pkg == "" {
+					pkg = rec.Repo
+				}
+				iv := state.GetCachedInstalled(pkg)
+				if iv == "" {
+					iv = state.QuerySystemVersion(pkg)
+					if iv != "" {
+						state.SetCachedInstalled(pkg, iv)
+					}
+				}
+				sp.InstalledVersion = iv
+			}
+		}
+
+		// 最新版本：快照内缓存或本次并发查询结果
+		if entry.Repo != "" {
+			owner, repo, perr := gh.ParseRepo(entry.Repo)
+			if perr == nil {
+				sp.LatestVersion = latestVer[owner+"/"+repo]
+			}
+		}
+
+		// 可升级性
+		if sp.Installed && sp.InstalledVersion != "" && sp.LatestVersion != "" {
+			sp.Upgradeable = compareVersion(sp.InstalledVersion, sp.LatestVersion) < 0
+		}
+
+		snap.Set(name, sp)
+	}
+
+	if err := state.SaveSnapshot(snap); err != nil {
+		return fmt.Errorf("保存 list 快照失败: %w", err)
+	}
+
+	fmt.Printf(T("更新 %d 个软件包信息，移除 %d 条不满足要求（无 .deb 包）的记录\n",
+		"Updated info for %d packages, removed %d records without a .deb package\n"),
+		len(snap.Packages), removed)
+	return nil
+}
+
+func containsStr(list []string, s string) bool {
+	for _, v := range list {
+		if v == s {
+			return true
+		}
+	}
+	return false
 }
 
 // --- history ---

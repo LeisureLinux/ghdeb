@@ -36,16 +36,29 @@ ghdeb \- 管理从 GitHub Releases 下载的 .deb 包
 .I 关键词
 .PP
 在包目录中搜索，支持按名称、显示名、简介匹配。支持正则表达式。
+.SS update
+.B ghdeb update
+.PP
+类
+.B apt update
+。查询目录中各 GitHub 仓库的最新版本、本地已装版本并判定是否可升级，
+校验并移除无当前架构 .deb 包的目录条目，将结果写入本地快照文件
+(~/.cache/ghdeb/snapshot.json)。
+之后
+.B ghdeb list
+只读取该快照，不再实时查询网络。
 .SS list
 .B ghdeb list
 .RB [ \-\-json ]
 .PP
-列出包目录中的所有条目。显示短名称、仓库、已装版本和最新版本。
-已装版本与最新版本均优先使用本地 24 小时缓存，未命中或过期时才分别实查
-dpkg 与 GitHub 并回填缓存。若已装版本低于最新版本，条目会标记为可升级。
+列出包目录中的所有条目，仅读取
+.B ghdeb update
+生成的本地快照文件，不访问网络。显示短名称、仓库、已装版本和最新版本；
+若已装版本低于最新版本，条目会标记为可升级。未运行过 update 时相关版本列显示 "-"。
 .TP
 .B \-\-json
 以 JSON 格式输出列表。
+
 .SS catalog
 .B ghdeb catalog
 .I 子命令
@@ -242,6 +255,9 @@ Release 版本缓存（24 小时 TTL）。
 .TP
 .B ghdeb install LeisureLinux/ghdeb@v0.6.0
 安装 ghdeb 指定版本。
+.TP
+.B ghdeb update
+刷新各包最新/已装版本信息到本地快照。
 .TP
 .B ghdeb upgrade
 升级所有已管理的包。
