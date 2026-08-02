@@ -20,7 +20,7 @@ import (
 	"github.com/leisurelinux/ghdeb/internal/state"
 )
 
-const version = "0.7.14"
+const version = "0.7.15"
 
 func main() {
 	// 检查是否使用 --json，如果是则不打印 banner
@@ -1313,6 +1313,9 @@ func cmdScan(args []string) error {
 			if existing != nil {
 				if existing.Removed {
 					status = "❌ " + T("removed", "removed")
+				} else if aptDeep && p.HasGitHub && !repoHasDeb(p.Owner, p.Repo) {
+					// Homepage 指向 GitHub，但最新 Release 无当前架构 .deb，无法管理
+					status = "⚠️ " + T("孤立包", "orphan")
 				} else {
 					status = "✅ " + T("已管理", "managed")
 				}
@@ -1428,6 +1431,7 @@ func cmdScan(args []string) error {
 
 	// 添加到 catalog
 	addedToCatalog := 0
+	skippedNoDeb := 0
 	path := catalog.SystemCatalogPath()
 
 	// 加载现有 catalog 内容
@@ -1447,6 +1451,12 @@ func cmdScan(args []string) error {
 			continue
 		}
 
+		// 最新 Release 无当前架构 .deb 的仓库无法由 ghdeb 管理，跳过
+		if !repoHasDeb(p.Owner, p.Repo) {
+			skippedNoDeb++
+			continue
+		}
+
 		entries[name] = catalog.CatalogEntry{
 			Repo:       p.Owner + "/" + p.Repo,
 			PrettyName: p.Repo,
@@ -1461,11 +1471,30 @@ func cmdScan(args []string) error {
 			return fmt.Errorf("写入 catalog 失败: %w", writeErr)
 		}
 		fmt.Printf(T("✅ 已将 %d 个包添加到 %s\n", "✅ Added %d packages to %s\n"), addedToCatalog, path)
+	} else if skippedNoDeb > 0 {
+		fmt.Println(T("没有找到合适的 .deb 包，ghdeb 无法管理该软件。",
+			"No matching .deb found, ghdeb cannot manage this software."))
 	} else {
 		fmt.Println(T("⚠️  没有新包可添加", "⚠️  No new packages to add"))
 	}
 
 	return nil
+}
+
+// repoHasDeb 查询 GitHub 仓库最新 Release 是否提供当前架构的 .deb。
+// 返回 true 表示存在匹配的 .deb，ghdeb 可以管理该软件。
+func repoHasDeb(owner, repo string) bool {
+	arch, err := deb.DetectArch()
+	if err != nil {
+		return false
+	}
+	client := gh.NewClient()
+	release, relErr := client.GetLatestRelease(owner, repo)
+	if relErr != nil {
+		return false
+	}
+	result, _ := gh.FindAssetWithFallback(release, arch)
+	return result != nil && result.Asset != nil
 }
 
 // verifyScanRepoRelease 目标为 owner/repo 时，解析出仓库并校验其 Releases 是否提供当前架构的 .deb。
