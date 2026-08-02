@@ -16,6 +16,7 @@ type DpkgPackage struct {
 	Version      string
 	Homepage     string
 	Architecture string
+	Provides     []string
 }
 
 // OrphanPackage orphan 包信息
@@ -143,6 +144,7 @@ func parseDpkgStatus() ([]DpkgPackage, error) {
 
 	var pkgs []DpkgPackage
 	var current *DpkgPackage
+	lastField := ""
 	scanner := bufio.NewScanner(f)
 
 	for scanner.Scan() {
@@ -153,6 +155,7 @@ func parseDpkgStatus() ([]DpkgPackage, error) {
 				pkgs = append(pkgs, *current)
 			}
 			current = nil
+			lastField = ""
 			continue
 		}
 
@@ -160,20 +163,37 @@ func parseDpkgStatus() ([]DpkgPackage, error) {
 			current = &DpkgPackage{
 				Name: strings.TrimPrefix(line, "Package: "),
 			}
+			lastField = "pkg"
 			continue
 		}
 
 		if current == nil {
 			continue
 		}
+
+		// 续行：把上一字段的换行内容拼接回去（Provides 可能跨行）
+		if strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t") {
+			if lastField == "provides" && len(current.Provides) > 0 {
+				current.Provides[len(current.Provides)-1] += strings.TrimSpace(line)
+			}
+			continue
+		}
+
 		if strings.HasPrefix(line, "Status: ") {
 			current.Status = strings.TrimPrefix(line, "Status: ")
+			lastField = "status"
 		} else if strings.HasPrefix(line, "Version: ") {
 			current.Version = strings.TrimPrefix(line, "Version: ")
+			lastField = "version"
 		} else if strings.HasPrefix(line, "Homepage: ") {
 			current.Homepage = strings.TrimPrefix(line, "Homepage: ")
+			lastField = "homepage"
 		} else if strings.HasPrefix(line, "Architecture: ") {
 			current.Architecture = strings.TrimPrefix(line, "Architecture: ")
+			lastField = "arch"
+		} else if strings.HasPrefix(line, "Provides: ") {
+			current.Provides = splitProvides(strings.TrimPrefix(line, "Provides: "))
+			lastField = "provides"
 		}
 	}
 
@@ -182,6 +202,47 @@ func parseDpkgStatus() ([]DpkgPackage, error) {
 	}
 
 	return pkgs, scanner.Err()
+}
+
+// splitProvides 解析 Provides 字段值，支持逗号分隔及 "名 (= 版本)" 形式。
+func splitProvides(s string) []string {
+	var out []string
+	for _, part := range strings.Split(s, ",") {
+		name := strings.TrimSpace(part)
+		if idx := strings.Index(name, "("); idx >= 0 {
+			name = strings.TrimSpace(name[:idx])
+		}
+		if name != "" {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
+// virtualToRealPkg 内建虚包→实包映射。
+// 用于 dpkg status 未声明 Provides 的已知别名场景，如 fd（命令名）→ fd-find（deb 包名）。
+var virtualToRealPkg = map[string]string{
+	"fd": "fd-find",
+}
+
+// resolveVirtualPkg 将虚包包名解析为实际安装的实包包名。
+// 优先级：dpkg status 中 Provides 声明 > 内建别名表；找不到则原样返回。
+func resolveVirtualPkg(pkgName string, allPkgs []DpkgPackage) string {
+	for i := range allPkgs {
+		p := &allPkgs[i]
+		if p.Name == pkgName {
+			continue
+		}
+		for _, v := range p.Provides {
+			if v == pkgName {
+				return p.Name
+			}
+		}
+	}
+	if real := virtualToRealPkg[pkgName]; real != "" {
+		return real
+	}
+	return pkgName
 }
 
 // MergeOrphansToState 将发现的 orphan 包合并到 state 中

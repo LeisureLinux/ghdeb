@@ -77,7 +77,7 @@ func ScanInstalledGitHubRepos(pkgFilter string) ([]InstalledGitHubPkg, error) {
 		seen[repoKey] = true
 
 		result = append(result, InstalledGitHubPkg{
-			PkgName:  pkg.Name,
+			PkgName:  resolveVirtualPkg(pkg.Name, allPkgs),
 			Version:  pkg.Version,
 			Owner:    owner,
 			Repo:     repo,
@@ -174,7 +174,7 @@ func ScanInstalledGitHubReposQuick(pkgFilter string) ([]InstalledGitHubPkg, erro
 		seen[repoKey] = true
 
 		result = append(result, InstalledGitHubPkg{
-			PkgName:  pkg.Name,
+			PkgName:  resolveVirtualPkg(pkg.Name, allPkgs),
 			Version:  pkg.Version,
 			Owner:    owner,
 			Repo:     repo,
