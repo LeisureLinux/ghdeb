@@ -65,7 +65,7 @@ ghdeb \- 管理从 GitHub Releases 下载的 .deb 包
 写入系统目录，不校验是否存在对应的 .deb。
 
 .B ghdeb catalog list
-列出系统和用户目录中的所有条目。
+列出目录中的所有条目。
 .TP
 .B ghdeb catalog show
 .I 名称
@@ -91,8 +91,8 @@ ghdeb \- 管理从 GitHub Releases 下载的 .deb 包
 .I 简介 ]
 .RB [ \-\-gpg-key
 .I url ]
-向用户目录
-.RI ( ~/.config/ghdeb/catalog.toml )
+向系统目录
+.RI ( /etc/ghdeb/catalog.toml )
 添加条目。
 .B \-\-repo
 和
@@ -105,7 +105,7 @@ ghdeb \- 管理从 GitHub Releases 下载的 .deb 包
 .TP
 .B ghdeb catalog delete
 .I 名称
-从用户目录中删除条目。
+从系统目录中删除条目。
 .TP
 .TP
 .B ghdeb catalog modify
@@ -119,8 +119,6 @@ ghdeb \- 管理从 GitHub Releases 下载的 .deb 包
 .RB [ \-\-all ]
 校验目录条目，移除未提供当前架构 .deb 的条目。不指定参数时校验并
 清洗全部条目；指定名称时仅校验该条目。
-.B ghdeb catalog cleanup
-清理用户目录中与系统目录完全相同的条目。避免不必要的重复。
 .RE
 .SS show / info
 .B ghdeb show
@@ -159,13 +157,11 @@ ghdeb \- 管理从 GitHub Releases 下载的 .deb 包
 .PP
 显示 ghdeb 版本。
 .SH 目录系统
-包目录采用 TOML 格式，支持两层：
-.TP
-.B /usr/share/ghdeb/catalog.toml
-系统级目录（随 ghdeb 一起安装）。
-.TP
-.B ~/.config/ghdeb/catalog.toml
-用户目录。同名条目覆盖系统目录。
+包目录采用 TOML 格式，存放于系统路径
+.B /etc/ghdeb/catalog.toml
+，由
+.B ghdeb catalog init
+自动生成（扫描本机 Homepage 指向 GitHub 的已装 .deb 包）。
 .PP
 目录条目格式：
 .EX
@@ -217,7 +213,7 @@ i386@i386, x86, i686, 386
 中。
 .SH 状态文件
 已管理包的记录存储在
-.B ~/.local/state/ghdeb/installed.json
+.B /var/cache/ghdeb/installed.json
 中。
 .SH 环境变量
 .TP
@@ -231,11 +227,8 @@ GitHub 个人访问令牌。将 API 速率限制从 60 次/小时（未认证）
 环境变量决定。中文 (zh_*) 产生中文输出；其他所有 locale 产生英文输出。
 .SH 文件
 .TP
-.B /usr/share/ghdeb/catalog.toml
-系统包目录。
-.TP
-.B ~/.config/ghdeb/catalog.toml
-用户包目录（覆盖系统条目）。
+.B /etc/ghdeb/catalog.toml
+系统包目录（由 catalog init 自动生成）。
 .TP
 .B ~/.cache/ghdeb/releases.json
 Release 版本缓存（24 小时 TTL）。
@@ -243,7 +236,7 @@ Release 版本缓存（24 小时 TTL）。
 .B ~/.cache/ghdeb/*.deb
 已下载的 .deb 包缓存。
 .TP
-.B ~/.local/state/ghdeb/installed.json
+.B /var/cache/ghdeb/installed.json
 已管理包的状态记录。
 .SH 退出状态
 .TP
@@ -273,13 +266,13 @@ Release 版本缓存（24 小时 TTL）。
 列出所有目录条目。
 .TP
 .B ghdeb catalog add myapp \-\-repo user/myapp \-\-summary "我的应用"
-向用户目录添加自定义条目。
+向系统目录添加自定义条目。
 .TP
 .B ghdeb catalog add myapp \-\-url "https://example.com/myapp_{version}_{arch}.deb"
 添加非 GitHub 来源到目录。
 .TP
 .B ghdeb catalog delete myapp
-从用户目录删除自定义条目。
+从系统目录删除自定义条目。
 .TP
 .B ghdeb clean \-\-dry\-run
 预览将被清理的缓存文件。

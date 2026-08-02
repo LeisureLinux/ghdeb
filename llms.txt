@@ -22,9 +22,9 @@
 - **Download resilience**: 3 retries with exponential backoff, resume downloads, HTTP 416 handling.
 - **Proxy support**: Respects `https_proxy`/`http_proxy` environment variables and `~/.config/ghdeb/config.json`.
 - **Non-interactive install**: Sets `DEBIAN_FRONTEND=noninteractive` to avoid debconf prompts.
-- **Shell autocompletion**: Built-in zsh and bash completion scripts.
+- **Shell autocompletion**: Built-in zsh, bash, and fish completion scripts.
 - **Bilingual output**: Chinese and English, selected by system locale.
-- **XDG-compliant**: Cache in `~/.cache/ghdeb/`, state in `~/.local/state/ghdeb/`, config in `~/.config/ghdeb/`.
+- **XDG-compliant**: Cache in `~/.cache/ghdeb/` (XDG_CACHE_HOME), config in `~/.config/ghdeb/` (XDG_CONFIG_HOME).
 
 ## Typical Workflows
 
@@ -53,7 +53,7 @@ ghdeb list
 - Written in Go, single binary, no runtime dependencies.
 - Uses GitHub REST API (unauthenticated: 60 req/hr, with GITHUB_TOKEN: 5000 req/hr).
 - Release metadata cached for 24 hours in `~/.cache/ghdeb/releases.json`.
-- Package state tracked in `~/.local/state/ghdeb/installed.json`.
+- Package state tracked in `/var/cache/ghdeb/installed.json`.
 
 ## How it differs from alternatives
 

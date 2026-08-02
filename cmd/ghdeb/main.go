@@ -102,12 +102,11 @@ func printUsage() {
   ghdeb catalog init                    一次性建立目录（扫描已装包的 GitHub Homepage，不校验 .deb）
   ghdeb catalog list                    列出包目录中所有条目
   ghdeb catalog show <name>             显示目录条目详情
-  ghdeb catalog add <name> --repo <owner/repo>  添加条目到用户目录
-  ghdeb catalog delete <name>           从用户目录删除条目
+  ghdeb catalog add <name> --repo <owner/repo>  添加条目到系统目录
+  ghdeb catalog delete <name>           从系统目录删除条目
   ghdeb catalog modify <name> --repo <owner/repo>  修改目录条目的仓库
   ghdeb catalog validate <name>        校验目录条目（移除无 .deb 的条目）
   ghdeb catalog validate --all         校验清洗全部条目（移除无 .deb 的条目）
-  ghdeb catalog cleanup                 清理用户目录中与系统目录重复的条目
   ghdeb show <pkg>                      显示包的完整信息
   ghdeb history <pkg>                   查看某包的完整操作历史
   ghdeb purge <pkg>                     卸载软件并清除配置文件
@@ -116,8 +115,7 @@ func printUsage() {
   ghdeb version                         显示版本
 
 包目录:
-  系统目录: /usr/share/ghdeb/catalog.toml
-  用户目录: ~/.config/ghdeb/catalog.toml（同名覆盖系统条目）
+  系统目录: /etc/ghdeb/catalog.toml
 
 环境变量:
   GITHUB_TOKEN / GH_TOKEN               GitHub 个人访问令牌（提高 API 限额）
@@ -145,12 +143,11 @@ Usage:
   ghdeb catalog init                    Build catalog once (scan installed GitHub Homepages, no .deb check)
   ghdeb catalog list                    List all catalog entries
   ghdeb catalog show <name>             Show catalog entry details
-  ghdeb catalog add <name> --repo <owner/repo>  Add entry to user catalog
-  ghdeb catalog delete <name>           Remove entry from user catalog
+  ghdeb catalog add <name> --repo <owner/repo>  Add entry to system catalog
+  ghdeb catalog delete <name>           Remove entry from system catalog
   ghdeb catalog modify <name> --repo <owner/repo>  Modify catalog entry repo
   ghdeb catalog validate <name>         Validate entry (remove those with no .deb)
   ghdeb catalog validate --all          Validate all entries (remove no-.deb)
-  ghdeb catalog cleanup                 Clean up duplicate entries from user catalog
   ghdeb show <pkg>                      Show package details
   ghdeb history <pkg>                   View operation history
   ghdeb purge <pkg>                     Uninstall and purge config
@@ -159,8 +156,7 @@ Usage:
   ghdeb version                         Show version
 
 Catalog:
-  System: /usr/share/ghdeb/catalog.toml
-  User:   ~/.config/ghdeb/catalog.toml (overrides system entries)
+  System: /etc/ghdeb/catalog.toml
 
 Environment Variables:
   GITHUB_TOKEN / GH_TOKEN               GitHub personal access token
