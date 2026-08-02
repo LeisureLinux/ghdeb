@@ -957,34 +957,32 @@ func cmdCatalogInit(args []string) error {
 		}
 	}
 
-	// 加载现有系统目录
+	// 全新重建：本机已装 GitHub 包的完整清单（含 ghdeb 置顶）
 	path := catalog.SystemCatalogPath()
-	entries := make(map[string]catalog.CatalogEntry)
-	if data, rErr := os.ReadFile(path); rErr == nil {
-		toml.Decode(string(data), &entries)
-	}
-
-	// 始终保留并置顶 ghdeb 自身条目
-	if _, ok := entries["ghdeb"]; !ok {
-		entries["ghdeb"] = catalog.CatalogEntry{
+	entries := map[string]catalog.CatalogEntry{
+		"ghdeb": {
 			Repo:       "LeisureLinux/ghdeb",
 			PrettyName: "ghdeb",
 			Website:    "https://github.com/LeisureLinux/ghdeb",
 			Summary:    "管理从 GitHub Releases 下载的 .deb 包",
+		},
+	}
+
+	// 若 catalog.toml 已存在且较大，需用户确认才覆盖（默认 No）
+	if fi, sErr := os.Stat(path); sErr == nil && fi.Size() > 10 {
+		if !confirmOverwrite() {
+			fmt.Println(T("已取消：保留现有 catalog.toml，未做任何更改",
+				"Cancelled: existing catalog.toml kept, no changes made"))
+			return nil
 		}
 	}
 
 	added := 0
-	skipped := 0
 	for _, key := range repoKeys {
 		p := repoPkgs[key]
 		name := strings.ToLower(p.Repo)
 		if name == "ghdeb" {
-			continue // ghdeb 自身已保留在头部
-		}
-		if _, ok := entries[name]; ok {
-			skipped++
-			continue
+			continue // ghdeb 自身已置顶
 		}
 		entries[name] = catalog.CatalogEntry{
 			Repo:       p.Owner + "/" + p.Repo,
@@ -1015,11 +1013,21 @@ func cmdCatalogInit(args []string) error {
 	fmt.Println(T("catalog 初始化完成（未校验 GitHub Releases 的 .deb 架构）:",
 		"Catalog initialized (no GitHub Releases .deb arch check):"))
 	fmt.Printf(T("  ✅ 已加入: %d\n", "  ✅ Added: %d\n"), added)
-	if skipped > 0 {
-		fmt.Printf(T("  ⏭  已存在: %d\n", "  ⏭  Already exists: %d\n"), skipped)
-	}
 	fmt.Printf(T("  配置路径: %s\n", "  Config path: %s\n"), path)
 	return nil
+}
+
+// confirmOverwrite 询问用户是否覆盖现有 catalog，默认 No。
+// 非交互（stdin EOF/空输入）时返回 false。
+func confirmOverwrite() bool {
+	fmt.Print(T("⚠️  这会用本机已装（Homepage 为 GitHub）的包清单覆盖现有 catalog.toml？（y/N） ",
+		"⚠️  This will overwrite catalog.toml with the list of locally installed GitHub packages? (y/N) "))
+	var ans string
+	if _, err := fmt.Scanln(&ans); err != nil {
+		return false
+	}
+	ans = strings.TrimSpace(ans)
+	return strings.EqualFold(ans, "y") || strings.EqualFold(ans, "yes")
 }
 
 func cmdCatalogAdd(args []string) error {

@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-VERSION="0.7.29"
+VERSION="0.7.30"
 
 # 支持的架构映射: go arch -> dpkg arch
 declare -A ARCH_MAP=(
@@ -70,9 +70,8 @@ chmod 644 ${PKG_DIR}/usr/share/zsh/site-functions/_ghdeb
 cp completion/ghdeb.fish ${PKG_DIR}/usr/share/fish/vendor_completions.d/_ghdeb
 chmod 644 ${PKG_DIR}/usr/share/fish/vendor_completions.d/_ghdeb
 
-# 包目录 (catalog.toml) - 安装到 /etc/ghdeb
-cp catalog/catalog.toml ${PKG_DIR}/etc/ghdeb/catalog.toml
-chmod 644 ${PKG_DIR}/etc/ghdeb/catalog.toml
+# 注：catalog.toml 不再随包安装，改由 postinst 首次调用 `ghdeb catalog init` 生成
+# （初次安装生成；升级时若已存在则不覆盖）
 
 # 安装 dpkg hook 脚本
 cp debian/hooks_template/remove-monitor.sh ${PKG_DIR}/usr/share/ghdeb/hooks/remove-monitor.sh
@@ -89,8 +88,8 @@ chmod 755 ${PKG_DIR}/DEBIAN/prerm
 cp debian/postrm ${PKG_DIR}/DEBIAN/postrm
 chmod 755 ${PKG_DIR}/DEBIAN/postrm
 
-# 标记配置文件（conffiles），升级时保留用户修改
-echo '/etc/ghdeb/catalog.toml' > ${PKG_DIR}/DEBIAN/conffiles
+# catalog.toml 由 postinst 生成，非包内 conffile，无需在 conffiles 中登记
+: > ${PKG_DIR}/DEBIAN/conffiles
 
 # 统一修正所有目录权限为 755（避免 umask 导致 775）
 find ${PKG_DIR} -type d -exec chmod 755 {} +

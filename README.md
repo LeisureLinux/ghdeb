@@ -120,6 +120,8 @@ ghdeb relies on `catalog init` + `catalog validate` to build and maintain the pa
 
 ```bash
 # Build the catalog once (scan installed apt GitHub Homepages, no .deb check)
+# On first run it auto-generates /etc/ghdeb/catalog.toml;
+# if the file already exists (>10 bytes), it asks for confirmation before overwriting (default No).
 ghdeb catalog init
 
 # Clean a single entry without a matching-arch .deb

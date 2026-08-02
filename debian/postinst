@@ -20,23 +20,26 @@ fi
 chown root:root /var/cache/ghdeb/installed.json
 chmod 644 /var/cache/ghdeb/installed.json
 
-# catalog 配置文件（从包中安装的，确保正确所有权）
+# catalog.toml 由 ghdeb 生成，非包内文件。
+# 初次安装：不存在 → 由 `ghdeb catalog init` 自动生成
+# 后续升级：已存在 → 不覆盖，仅修正所有权
 if [ -f /etc/ghdeb/catalog.toml ]; then
     chown root:root /etc/ghdeb/catalog.toml
     chmod 644 /etc/ghdeb/catalog.toml
-fi
-
-# 自动扫描已装包的 GitHub Homepage，生成/补全 catalog.toml
-# 注：postinst 在 dpkg 提取二进制后执行，/usr/bin/ghdeb 已可用
-# 失败不阻断安装（如无网络时），仅打印提示
-if command -v ghdeb >/dev/null 2>&1; then
-    if ghdeb catalog init >/dev/null 2>&1; then
-        echo "   catalog.toml 已通过 ghdeb catalog init 生成/补全"
-    else
-        echo "   ⚠️  catalog init 未能完成（可能无网络），沿用随包安装的 catalog.toml"
-    fi
+    echo "   catalog.toml 已存在，升级不覆盖"
 else
-    echo "   ⚠️  未找到 ghdeb 二进制，跳过 catalog init"
+    # 注：postinst 在 dpkg 提取二进制后执行，/usr/bin/ghdeb 已可用
+    # 首次调用 init 时 catalog.toml 尚不存在，不会触发覆盖确认
+    # 失败不阻断安装（如无网络时），仅打印提示
+    if command -v ghdeb >/dev/null 2>&1; then
+        if ghdeb catalog init >/dev/null 2>&1; then
+            echo "   catalog.toml 已通过 ghdeb catalog init 自动生成"
+        else
+            echo "   ⚠️  catalog init 未能完成（可能无网络），未生成 catalog.toml"
+        fi
+    else
+        echo "   ⚠️  未找到 ghdeb 二进制，跳过 catalog init"
+    fi
 fi
 
 # 迁移旧状态文件（从用户目录迁移到系统目录）
