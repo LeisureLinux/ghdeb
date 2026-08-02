@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-VERSION="0.7.36"
+VERSION="0.7.37"
 
 # 支持的架构映射: go arch -> dpkg arch
 declare -A ARCH_MAP=(
@@ -77,6 +77,8 @@ chmod 644 ${PKG_DIR}/etc/ghdeb/catalog.toml
 # 安装 dpkg hook 脚本
 cp debian/hooks_template/remove-monitor.sh ${PKG_DIR}/usr/share/ghdeb/hooks/remove-monitor.sh
 chmod 755 ${PKG_DIR}/usr/share/ghdeb/hooks/remove-monitor.sh
+cp debian/hooks_template/refresh-installed-cache.sh ${PKG_DIR}/usr/share/ghdeb/hooks/refresh-installed-cache.sh
+chmod 755 ${PKG_DIR}/usr/share/ghdeb/hooks/refresh-installed-cache.sh
 
 # 生成控制文件（替换 Architecture 字段）
 sed -e "s/^Version:.*/Version: ${VERSION}/" -e "s/^Architecture:.*/Architecture: ${TARGET_ARCH}/" debian/control > ${PKG_DIR}/DEBIAN/control

@@ -45,10 +45,10 @@ regular expressions.
 .RB [ \-\-json ]
 .PP
 List all catalog entries. Shows short name, repo, installed version, and the
-latest version from GitHub. The latest version prefers a 24-hour local cache
-and is fetched from GitHub only when the cache is missing or expired.
-Entries whose installed version is older than the latest are flagged as
-upgradeable.
+latest version from GitHub. Both installed and latest versions prefer a
+24-hour local cache; they are queried from dpkg / GitHub only when the cache
+is missing or expired, then written back. Entries whose installed version is
+older than the latest are flagged as upgradeable.
 .TP
 .B \-\-json
 Output the list as JSON.

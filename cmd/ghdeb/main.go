@@ -1645,15 +1645,24 @@ func cmdList(args []string) error {
 			repoOrURL = truncate(entry.URL, 23)
 		}
 
-		// 已装版本：来自本地 state + dpkg 实际查询
+		// 已装版本：优先 24h 缓存，未命中/过期才实查 dpkg 并回填缓存
 		installed := false
 		installedVer := ""
 		if st != nil && entry.Repo != "" {
 			rec := st.Get(entry.Repo)
 			if rec != nil && !rec.Removed {
 				installed = true
-				rec.RefreshSystemInfo(rec.PkgName)
-				installedVer = rec.SystemVersion
+				pkg := rec.PkgName
+				if pkg == "" {
+					pkg = rec.Repo
+				}
+				installedVer = state.GetCachedInstalled(pkg)
+				if installedVer == "" {
+					installedVer = state.QuerySystemVersion(pkg)
+					if installedVer != "" {
+						state.SetCachedInstalled(pkg, installedVer)
+					}
+				}
 			}
 		}
 
