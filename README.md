@@ -3,7 +3,7 @@
 [![Release](https://img.shields.io/github/v/release/LeisureLinux/ghdeb)](https://github.com/LeisureLinux/ghdeb/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-**ghdeb** is a lightweight CLI tool that installs and upgrades `.deb` packages directly from GitHub Releases — one command, no PPA, no manual download.
+**ghdeb** is a lightweight CLI tool that manages `.deb` packages downloaded from GitHub Releases — one command, no PPA, no manual download. It features a built-in catalog of 50+ popular packages with short-name installs.
 
 ```bash
 ghdeb install LeisureLinux/ghdeb      # install latest ghdeb
@@ -30,11 +30,57 @@ Many excellent CLI tools — **bat**, **fd**, **ripgrep**, **gh**, **rustdesk**,
 ghdeb install LeisureLinux/ghdeb
 
 # Or install a specific version
-ghdeb install LeisureLinux/ghdeb@v0.3.15
+ghdeb install LeisureLinux/ghdeb@v0.6.0
 
 # Or build from source
 git clone https://github.com/LeisureLinux/ghdeb.git
 cd ghdeb && make build && sudo make install
+```
+
+## How to use the package catalog?
+
+ghdeb includes a curated catalog of 50+ popular packages. You can install them by short name:
+
+```bash
+# Install by short name (mapped via catalog)
+ghdeb install bat                     # → sharkdp/bat
+ghdeb install fd                      # → sharkdp/fd
+ghdeb install ripgrep                 # → BurntSushi/ripgrep
+ghdeb install gh                      # → cli/cli
+
+# Search the catalog
+ghdeb search monitor                  # regex search by name/summary
+ghdeb catalog list                    # list all catalog entries
+ghdeb catalog show bat                # show entry details
+```
+
+### Adding custom packages to the catalog
+
+```bash
+# Add a GitHub-hosted package
+ghdeb catalog add myapp --repo user/myapp --summary "My awesome app"
+
+# Add a non-GitHub source (direct .deb URL)
+ghdeb catalog add myapp --url "https://example.com/myapp_{version}_{arch}.deb"
+
+# Remove from user catalog
+ghdeb catalog delete myapp
+```
+
+User catalog entries are stored in `~/.config/ghdeb/catalog.toml` and override system entries.
+
+## How to manage packages?
+
+```bash
+# Reinstall a package
+ghdeb reinstall bat
+
+# Uninstall and purge config
+ghdeb purge rustdesk
+
+# Clean downloaded .deb cache
+ghdeb clean
+ghdeb clean --dry-run                 # preview only
 ```
 
 ## How to install any .deb package from GitHub?
@@ -47,7 +93,7 @@ ghdeb install localsend/localsend   # LocalSend file sharing
 ghdeb install jgraph/drawio         # draw.io diagrams
 
 # Install a specific version
-ghdeb install LeisureLinux/ghdeb@v0.3.14
+ghdeb install LeisureLinux/ghdeb@v0.6.0
 ```
 
 ghdeb automatically detects your system architecture (`dpkg --print-architecture`) and selects the matching `.deb` asset from the release.
@@ -152,6 +198,8 @@ sudo cp /usr/share/ghdeb/completion/ghdeb.bash /etc/bash_completion.d/ghdeb
 
 | Path | Purpose |
 |------|---------|
+| `/usr/share/ghdeb/catalog.toml` | System package catalog |
+| `~/.config/ghdeb/catalog.toml` | User package catalog (overrides system) |
 | `~/.cache/ghdeb/` | Downloaded .deb file cache |
 | `~/.local/state/ghdeb/installed.json` | Package state tracking |
 | `~/.config/ghdeb/config.json` | Configuration (proxy, etc.) |

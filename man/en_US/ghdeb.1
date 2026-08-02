@@ -1,4 +1,4 @@
-.TH GHDEB 1 "2026-08-01" "ghdeb 0.5.1" "User Commands"
+.TH GHDEB 1 "2026-08-02" "ghdeb 0.6.0" "User Commands"
 .SH NAME
 ghdeb \- Install .deb packages from GitHub Releases
 .SH SYNOPSIS
@@ -13,15 +13,27 @@ architecture detection, asset matching, downloading, and installation.
 .SS install
 .B ghdeb install
 .IB owner / repo [ @tag ]
+.br
+.B ghdeb install
+.I shortname
 .PP
 Install or upgrade a package to the specified version. If no tag is given,
-the latest stable release is used.
+the latest stable release is used. Short names from the catalog are also
+supported (e.g.,
+.IR bat ,
+.IR fd ).
 .SS upgrade
 .B ghdeb upgrade
 .RI [ owner/repo ]
 .PP
 Upgrade managed packages. If no package is specified, all managed packages
 are upgraded. Automatically scans for orphan packages before upgrading.
+.SS reinstall
+.B ghdeb reinstall
+.I pkg
+.PP
+Force reinstall a package by downloading and installing the latest release
+again. The history entry is marked as a reinstall.
 .SS scan
 .B ghdeb scan
 .RB [ \-\-deep ]
@@ -32,6 +44,12 @@ an apt source) and optionally add them to management.
 .B \-\-deep
 Also fetch each package's Homepage URL and try to extract a GitHub repository
 link from it.
+.SS search
+.B ghdeb search
+.I pattern
+.PP
+Search the package catalog by name, pretty name, or summary. Supports
+regular expressions.
 .SS list
 .B ghdeb list
 .RB [ \-\-refresh ]
@@ -42,6 +60,67 @@ available version, and upgrade status.
 .B \-\-refresh
 Force refresh the version cache by clearing all cached release data and
 re-fetching from GitHub API.
+.SS catalog
+.B ghdeb catalog
+.I subcommand
+.PP
+Manage the package catalog. The catalog maps short names to GitHub
+repositories (or direct .deb URLs) and is used for short-name installs.
+.RS
+.TP
+.B ghdeb catalog list
+List all catalog entries from both system and user catalogs.
+.TP
+.B ghdeb catalog show
+.I name
+Show detailed information about a catalog entry.
+.TP
+.B ghdeb catalog search
+.I pattern
+Search the catalog (same as the top-level
+.B search
+command).
+.TP
+.B ghdeb catalog add
+.I name
+.B \-\-repo
+.I owner/repo
+.RB [ \-\-url
+.I deb-url ]
+.RB [ \-\-pretty-name
+.I name ]
+.RB [ \-\-website
+.I url ]
+.RB [ \-\-summary
+.I text ]
+.RB [ \-\-gpg-key
+.I url ]
+Add an entry to the user catalog
+.RI ( ~/.config/ghdeb/catalog.toml ).
+At least one of
+.B \-\-repo
+or
+.B \-\-url
+is required. If
+.B \-\-url
+is given, the package can be installed from a direct .deb download URL
+(non-GitHub source). The
+.B \-\-gpg-key
+option specifies a URL to a GPG public key for signature verification.
+.TP
+.B ghdeb catalog delete
+.I name
+Remove an entry from the user catalog.
+.RE
+.SS show / info
+.B ghdeb show
+.I pkg
+.PP
+Show the latest release information for a package, including matched
+download assets for the current architecture.
+.B info
+is an alias for
+.BR show .
 .SS history
 .B ghdeb history
 .IB owner / repo
@@ -53,6 +132,24 @@ Show the complete operation history (install, upgrade, remove) for a package.
 .PP
 Mark a package as removed. The package itself is not uninstalled; only the
 ghdeb management record is marked as removed. History is preserved.
+.SS purge
+.B ghdeb purge
+.I pkg
+.PP
+Uninstall a package using
+.B apt-get purge
+and clean up dependencies with
+.BR autoremove .
+The ghdeb management record is also removed.
+.SS clean
+.B ghdeb clean
+.RB [ \-\-dry\-run ]
+.PP
+Remove cached .deb files from
+.BR ~/.cache/ghdeb/ .
+Use
+.B \-\-dry\-run
+to preview what would be deleted without actually removing files.
 .SS set\-repo
 .B ghdeb set\-repo
 .I pkg
@@ -60,16 +157,47 @@ ghdeb management record is marked as removed. History is preserved.
 .PP
 Set the GitHub repository for a package that was previously scanned but has
 no repository assigned.
-.SS info
-.B ghdeb info
-.IB owner / repo
-.PP
-Show the latest release information for a repository, including matched
-download assets for the current architecture.
 .SS version
 .B ghdeb version
 .PP
 Print the ghdeb version.
+.SH CATALOG
+The package catalog is stored in TOML format and supports two layers:
+.TP
+.B /usr/share/ghdeb/catalog.toml
+System-wide catalog (shipped with ghdeb).
+.TP
+.B ~/.config/ghdeb/catalog.toml
+User catalog. Entries here override system entries with the same name.
+.PP
+Catalog entry format:
+.EX
+[bat]
+repo = "sharkdp/bat"
+pretty_name = "bat"
+website = "https://github.com/sharkdp/bat"
+summary = "A cat(1) clone with syntax highlighting"
+.EE
+.PP
+For non-GitHub sources, a direct URL template can be specified:
+.EX
+[myapp]
+url = "https://example.com/releases/myapp_{version}_{arch}.deb"
+pretty_name = "My App"
+summary = "My custom application"
+.EE
+.PP
+URL placeholders:
+.B {version}
+(release tag without leading v),
+.B {arch}
+(dpkg architecture name).
+.SH GPG VERIFICATION
+When a catalog entry includes a
+.B gpg_key
+field, ghdeb will attempt to verify the .deb package signature after
+download using the specified GPG public key. If verification fails, the
+installation is aborted.
 .SH ARCHITECTURE MATCHING
 .B ghdeb
 automatically detects the system architecture via
@@ -107,6 +235,12 @@ environment variable. Chinese (zh_*) produces Chinese output; all other
 locales produce English output.
 .SH FILES
 .TP
+.B /usr/share/ghdeb/catalog.toml
+System package catalog.
+.TP
+.B ~/.config/ghdeb/catalog.toml
+User package catalog (overrides system entries).
+.TP
 .B ~/.cache/ghdeb/releases.json
 Release version cache (24h TTL).
 .TP
@@ -124,47 +258,41 @@ Success.
 Error (invalid arguments, network failure, install failure, etc.).
 .SH EXAMPLES
 .TP
+.B ghdeb install bat
+Install bat using its catalog short name.
+.TP
 .B ghdeb install LeisureLinux/ghdeb
 Install the latest version of ghdeb.
 .TP
-.B ghdeb install LeisureLinux/ghdeb@v0.5.1
+.B ghdeb install LeisureLinux/ghdeb@v0.6.0
 Install a specific version of ghdeb.
 .TP
 .B ghdeb upgrade
 Upgrade all managed packages.
 .TP
-.B ghdeb upgrade LeisureLinux/ghdeb
-Upgrade only ghdeb.
+.B ghdeb search monitor
+Search the catalog for packages matching "monitor".
 .TP
-.B ghdeb scan --deep
-Scan for orphan packages, fetching Homepages for GitHub links.
+.B ghdeb catalog list
+List all catalog entries.
 .TP
-.B ghdeb list --refresh
-List all packages, forcing a fresh check of latest versions.
+.B ghdeb catalog add myapp \-\-repo user/myapp \-\-summary "My app"
+Add a custom entry to the user catalog.
 .TP
-.B ghdeb set\-repo ghdeb LeisureLinux/ghdeb
-Assign a GitHub repo to a previously scanned package.
-Configuration file (JSON format):
+.B ghdeb catalog add myapp \-\-url "https://example.com/myapp_{version}_{arch}.deb"
+Add a non-GitHub source to the catalog.
 .TP
-.B ~/.config/ghdeb/config.json
-User configuration file. Currently supports:
-.RS
+.B ghdeb catalog delete myapp
+Remove a custom entry from the user catalog.
 .TP
-.B proxy
-Proxy URL (e.g., "http://wpad.lan:8888"). Used when environment variables
-are not set.
-.RE
-.PP
-Example config.json:
-.EX
-{
-  "proxy": "http://wpad.lan:8888"
-}
-.EE
-
+.B ghdeb clean \-\-dry\-run
+Preview cached files that would be cleaned.
+.TP
+.B ghdeb purge rustdesk
+Uninstall rustdesk and clean up.
 .SH SHELL COMPLETION
 .B ghdeb
-provides shell completion scripts for bash and zsh. After installation,
+provides shell completion scripts for bash, zsh, and fish. After installation,
 completions are automatically available for new shells. For existing shells:
 .PP
 .B bash:
@@ -178,24 +306,9 @@ run
 or restart your shell. Completions are installed to
 .IR /usr/share/zsh/site-functions/_ghdeb .
 .PP
-Completion features:
-.TP
-.B Command completion
-Type
-.I ghdeb
-and press Tab to see available commands.
-.TP
-.B Package completion
-For commands that take package names (upgrade, history, remove, set-repo),
-press Tab to see managed packages from your ghdeb state.
-.TP
-.B Option completion
-Type
-.I ghdeb scan --
-or
-.I ghdeb list --
-and press Tab to see available options.
-
+.B fish:
+Completions are installed to
+.IR /usr/share/fish/vendor_completions.d/ghdeb.fish .
 .SH SEE ALSO
 .BR dpkg (1),
 .BR apt (8)

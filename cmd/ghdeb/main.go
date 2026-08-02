@@ -17,7 +17,7 @@ import (
 	"github.com/leisurelinux/ghdeb/internal/state"
 )
 
-const version = "0.5.1"
+const version = "0.6.0"
 
 func main() {
 	fmt.Printf(T("ghdeb v%s - 管理从 GitHub Releases 下载的 .deb 包 © LeisureLinux\n", "ghdeb v%s - manage .deb packages downloaded from GitHub Releases © LeisureLinux\n"), version)
@@ -56,6 +56,8 @@ func main() {
 		err = cmdShow(args) // info 作为 show 的别名
 	case "clean":
 		err = cmdClean(args)
+	case "catalog":
+		err = cmdCatalog(args)
 	case "set-repo":
 		err = cmdSetRepo(args)
 	case "test-homepage":
@@ -78,7 +80,7 @@ func main() {
 
 func printUsage() {
 	if isChinese() {
-		fmt.Print(`ghdeb - 从 GitHub Releases 安装 .deb 包
+		fmt.Print(`ghdeb - 管理从 GitHub Releases 下载的 .deb 包
 
 用法:
   ghdeb install <pkg|owner/repo>[@tag]  安装（支持短名称或 owner/repo）
@@ -86,7 +88,11 @@ func printUsage() {
   ghdeb reinstall <pkg>                 重新安装指定包
   ghdeb scan [--deep]                   扫描系统中的 GitHub 孤立包并纳入管理
   ghdeb search <pattern>                在包目录中搜索
-  ghdeb list [--refresh]                列出所有包（含已移除）
+  ghdeb list [--refresh]                列出所有已管理的包
+  ghdeb catalog list                    列出包目录中所有条目
+  ghdeb catalog show <name>             显示目录条目详情
+  ghdeb catalog add <name> --repo <owner/repo>  添加条目到用户目录
+  ghdeb catalog delete <name>           从用户目录删除条目
   ghdeb show <pkg>                      显示包的完整信息
   ghdeb history <pkg>                   查看某包的完整操作历史
   ghdeb remove <pkg>                    标记移除（保留历史记录，不卸载）
@@ -106,14 +112,16 @@ func printUsage() {
 示例:
   ghdeb install bat                     通过短名称安装 bat
   ghdeb install sharkdp/bat             通过 owner/repo 安装
-  ghdeb install LeisureLinux/ghdeb@v0.4.0  安装指定版本
+  ghdeb install LeisureLinux/ghdeb@v0.6.0  安装指定版本
   ghdeb search monitor                  搜索包含 monitor 的包
+  ghdeb catalog list                    列出所有目录条目
+  ghdeb catalog add myapp --repo user/myapp --summary "我的应用"
   ghdeb show rustdesk                   显示包信息
   ghdeb clean                           清理缓存
   ghdeb purge rustdesk                  卸载 rustdesk
 `)
 	} else {
-		fmt.Print(`ghdeb - Install .deb packages from GitHub Releases
+		fmt.Print(`ghdeb - Manage .deb packages from GitHub Releases
 
 Usage:
   ghdeb install <pkg|owner/repo>[@tag]  Install (short name or owner/repo)
@@ -121,13 +129,17 @@ Usage:
   ghdeb reinstall <pkg>                 Reinstall a package
   ghdeb scan [--deep]                   Scan system for GitHub orphan packages
   ghdeb search <pattern>                Search in package catalog
-  ghdeb list [--refresh]                List all packages (including removed)
+  ghdeb list [--refresh]                List managed packages
+  ghdeb catalog list                    List all catalog entries
+  ghdeb catalog show <name>             Show catalog entry details
+  ghdeb catalog add <name> --repo <owner/repo>  Add entry to user catalog
+  ghdeb catalog delete <name>           Remove entry from user catalog
   ghdeb show <pkg>                      Show package details
   ghdeb history <pkg>                   View operation history
-  ghdeb remove <pkg>                    Mark as removed (keep history, don't uninstall)
-  ghdeb purge <pkg>                     Uninstall and purge config files
-  ghdeb clean [--dry-run]               Clean downloaded .deb cache
-  ghdeb set-repo <pkg> <owner/repo>     Set GitHub repository for a package
+  ghdeb remove <pkg>                    Mark as removed (keep history)
+  ghdeb purge <pkg>                     Uninstall and purge config
+  ghdeb clean [--dry-run]               Clean .deb cache
+  ghdeb set-repo <pkg> <owner/repo>     Set GitHub repo for a package
   ghdeb info <pkg>                      Alias for show
   ghdeb version                         Show version
 
@@ -141,8 +153,10 @@ Environment Variables:
 Examples:
   ghdeb install bat                     Install via short name
   ghdeb install sharkdp/bat             Install via owner/repo
-  ghdeb install LeisureLinux/ghdeb@v0.4.0  Install specific version
-  ghdeb search monitor                  Search catalog for monitor
+  ghdeb install LeisureLinux/ghdeb@v0.6.0  Install specific version
+  ghdeb search monitor                  Search catalog
+  ghdeb catalog list                    List catalog entries
+  ghdeb catalog add myapp --repo user/myapp --summary "My app"
   ghdeb show rustdesk                   Show package info
   ghdeb clean                           Clean cache
   ghdeb purge rustdesk                  Uninstall rustdesk
@@ -165,6 +179,10 @@ func resolvePkgArg(arg string) (owner, repo string, err error) {
 	entry := cat.Lookup(arg)
 	if entry == nil {
 		return "", "", fmt.Errorf("未找到包 %s（既不是有效的 owner/repo，也不在目录中）", arg)
+	}
+	// 处理直接 URL 来源（非 GitHub）
+	if entry.IsDirectURL() {
+		return "", "", fmt.Errorf("包 %s 使用直接 URL 来源，暂不支持自动安装，请手动下载: %s", arg, entry.URL)
 	}
 	owner, repo, err = gh.ParseRepo(entry.Repo)
 	if err != nil {
@@ -669,6 +687,192 @@ func cmdShow(args []string) error {
 	}
 
 	fmt.Println(strings.Repeat("─", 50))
+	return nil
+}
+
+// --- catalog ---
+
+func cmdCatalog(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("请指定子命令: list, show, search, add, delete")
+	}
+
+	subcmd := args[0]
+	subargs := args[1:]
+
+	switch subcmd {
+	case "list":
+		return cmdCatalogList(subargs)
+	case "show":
+		return cmdCatalogShow(subargs)
+	case "search":
+		return cmdSearch(subargs) // 复用 search 逻辑
+	case "add":
+		return cmdCatalogAdd(subargs)
+	case "delete", "del", "rm":
+		return cmdCatalogDelete(subargs)
+	default:
+		return fmt.Errorf("未知子命令: %s（可用: list, show, search, add, delete）", subcmd)
+	}
+}
+
+func cmdCatalogList(args []string) error {
+	cat, err := catalog.Load()
+	if err != nil {
+		return fmt.Errorf("加载目录失败: %w", err)
+	}
+
+	entries := cat.AllEntries()
+	if len(entries) == 0 {
+		fmt.Println(T("目录为空", "Catalog is empty"))
+		return nil
+	}
+
+	// 加载用户目录判断来源
+	userEntries, _ := catalog.LoadUserCatalog()
+
+	st, _ := state.Load()
+
+	names := cat.SortedNames()
+	fmt.Printf("%-20s %-30s %-8s %s\n", T("名称", "Name"), T("仓库/URL", "Repo/URL"), T("来源", "Source"), T("简介", "Summary"))
+	fmt.Println(strings.Repeat("-", 90))
+
+	for _, name := range names {
+		entry := entries[name]
+		source := "system"
+		if _, ok := userEntries[name]; ok {
+			source = "user"
+		}
+
+		repoOrURL := entry.Repo
+		if repoOrURL == "" {
+			repoOrURL = truncate(entry.URL, 28)
+		}
+
+		// 检查安装状态
+		installed := ""
+		if st != nil && entry.Repo != "" {
+			rec := st.Get(entry.Repo)
+			if rec != nil && !rec.Removed {
+				installed = " ✅"
+			}
+		}
+
+		summary := truncate(entry.Summary, 35)
+		fmt.Printf("%-20s %-30s %-8s %s%s\n", name, repoOrURL, source, summary, installed)
+	}
+
+	fmt.Printf("\n共 %d 个条目\n", len(entries))
+	return nil
+}
+
+func cmdCatalogShow(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("请指定包名，如: ghdeb catalog show bat")
+	}
+
+	name := args[0]
+	cat, err := catalog.Load()
+	if err != nil {
+		return fmt.Errorf("加载目录失败: %w", err)
+	}
+
+	entry := cat.Lookup(name)
+	if entry == nil {
+		return fmt.Errorf("目录中未找到 %s", name)
+	}
+
+	// 判断来源
+	userEntries, _ := catalog.LoadUserCatalog()
+	source := "系统目录 (/usr/share/ghdeb/catalog.toml)"
+	if _, ok := userEntries[name]; ok {
+		source = "用户目录 (~/.config/ghdeb/catalog.toml)"
+	}
+
+	fmt.Println(strings.Repeat("─", 50))
+	fmt.Print(catalog.FormatEntry(name, entry))
+	fmt.Printf("来源: %s\n", source)
+	fmt.Println(strings.Repeat("─", 50))
+	return nil
+}
+
+func cmdCatalogAdd(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("用法: ghdeb catalog add <name> --repo <owner/repo> [选项]")
+	}
+
+	name := args[0]
+	var entry catalog.CatalogEntry
+
+	// 解析参数
+	for i := 1; i < len(args); i++ {
+		switch args[i] {
+		case "--repo":
+			if i+1 >= len(args) {
+				return fmt.Errorf("--repo 需要参数")
+			}
+			i++
+			entry.Repo = args[i]
+		case "--url":
+			if i+1 >= len(args) {
+				return fmt.Errorf("--url 需要参数")
+			}
+			i++
+			entry.URL = args[i]
+		case "--pretty-name":
+			if i+1 >= len(args) {
+				return fmt.Errorf("--pretty-name 需要参数")
+			}
+			i++
+			entry.PrettyName = args[i]
+		case "--website":
+			if i+1 >= len(args) {
+				return fmt.Errorf("--website 需要参数")
+			}
+			i++
+			entry.Website = args[i]
+		case "--summary":
+			if i+1 >= len(args) {
+				return fmt.Errorf("--summary 需要参数")
+			}
+			i++
+			entry.Summary = args[i]
+		case "--gpg-key":
+			if i+1 >= len(args) {
+				return fmt.Errorf("--gpg-key 需要参数")
+			}
+			i++
+			entry.GPGKey = args[i]
+		default:
+			return fmt.Errorf("未知选项: %s", args[i])
+		}
+	}
+
+	if err := catalog.AddToUserCatalog(name, &entry); err != nil {
+		return err
+	}
+
+	fmt.Printf(T("✅ 已添加 %s 到用户目录\n", "✅ Added %s to user catalog\n"), name)
+	if entry.Repo != "" {
+		fmt.Printf("   repo: %s\n", entry.Repo)
+	}
+	if entry.URL != "" {
+		fmt.Printf("   url: %s\n", entry.URL)
+	}
+	return nil
+}
+
+func cmdCatalogDelete(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("请指定包名，如: ghdeb catalog delete myapp")
+	}
+
+	name := args[0]
+	if err := catalog.DeleteFromUserCatalog(name); err != nil {
+		return err
+	}
+
+	fmt.Printf(T("✅ 已从用户目录删除 %s\n", "✅ Deleted %s from user catalog\n"), name)
 	return nil
 }
 

@@ -3,7 +3,7 @@
 # 或: sudo cp ghdeb.fish /usr/share/fish/vendor_completions.d/
 
 # 子命令列表
-set -l subcommands install upgrade reinstall scan search list ls show info history remove rm purge clean set-repo test-homepage version help
+set -l subcommands install upgrade reinstall scan search list ls catalog show info history remove rm purge clean set-repo test-homepage version help
 
 # 子命令补全
 complete -c ghdeb -f -n "not __fish_seen_subcommand_from $subcommands" \
@@ -60,3 +60,15 @@ complete -c ghdeb -f -n "__fish_seen_subcommand_from clean" \
     -a "--dry-run" -d "仅显示将清理的内容"
 
 # search: 无补全（用户输入搜索词）
+
+# catalog: 子命令补全
+complete -c ghdeb -f -n "__fish_seen_subcommand_from catalog; and not __fish_seen_subcommand_from list show search add delete" \
+    -a "list show search add delete"
+
+# catalog show/delete: 补全 catalog 包名
+complete -c ghdeb -f -n "__fish_seen_subcommand_from catalog; and __fish_seen_subcommand_from show delete" \
+    -a "(__ghdeb_catalog_names)"
+
+# catalog add: 选项补全
+complete -c ghdeb -f -n "__fish_seen_subcommand_from catalog; and __fish_seen_subcommand_from add" \
+    -a "--repo --url --pretty-name --website --summary --gpg-key"

@@ -18,35 +18,55 @@ except:
     fi
 }
 
+_ghdeb_get_catalog_names() {
+    local catalog_file="/usr/share/ghdeb/catalog.toml"
+    local user_catalog="${XDG_CONFIG_HOME:-$HOME/.config}/ghdeb/catalog.toml"
+    if [[ -f "$catalog_file" ]]; then
+        grep '^\[' "$catalog_file" | sed 's/^\[//;s/\]$//'
+    fi
+    if [[ -f "$user_catalog" ]]; then
+        grep '^\[' "$user_catalog" | sed 's/^\[//;s/\]$//'
+    fi
+}
+
 _ghdeb() {
     local -a commands
     commands=(
-        'install:Install or upgrade a package from GitHub Releases'
+        'install:Install or upgrade a package'
         'upgrade:Upgrade managed packages'
+        'reinstall:Force reinstall a package'
         'scan:Scan system for GitHub orphan packages'
-        'list:List all managed packages'
-        'history:Show operation history for a package'
+        'search:Search in package catalog'
+        'list:List managed packages'
+        'catalog:Manage package catalog'
+        'show:Show package details'
+        'info:Alias for show'
+        'history:Show operation history'
         'remove:Mark a package as removed'
+        'purge:Uninstall and purge config'
+        'clean:Clean .deb cache'
         'set-repo:Set GitHub repository for a package'
-        'info:Show latest release information'
         'version:Show ghdeb version'
         'help:Show help message'
     )
-    
+
     _arguments -C \
         '1:command:->command' \
         '*::arg:->args'
-    
+
     case $state in
         command)
             _describe -t commands 'ghdeb command' commands
             ;;
         args)
             case $words[1] in
-                install|info)
-                    _message 'owner/repo[@tag]'
+                install|show|info)
+                    local -a names packages
+                    names=(${(f)"$(_ghdeb_get_catalog_names)"})
+                    packages=(${(f)"$(_ghdeb_get_packages)"})
+                    _describe -t names 'package' names packages
                     ;;
-                upgrade|history|remove)
+                upgrade|reinstall|history|remove|purge)
                     local -a packages
                     packages=(${(f)"$(_ghdeb_get_packages)"})
                     _describe -t packages 'package' packages
@@ -61,13 +81,43 @@ _ghdeb() {
                     fi
                     ;;
                 scan)
-                    _arguments \
-                        '--deep[Fetch Homepage to find GitHub links]'
+                    _arguments '--deep[Fetch Homepage to find GitHub links]'
                     ;;
                 list)
                     _arguments \
                         '--refresh[Force refresh version cache]' \
                         '-r[Force refresh version cache]'
+                    ;;
+                clean)
+                    _arguments '--dry-run[Preview without deleting]'
+                    ;;
+                catalog)
+                    if (( CURRENT == 2 )); then
+                        local -a subcmds
+                        subcmds=('list:List all entries' 'show:Show entry details' 'search:Search catalog' 'add:Add entry' 'delete:Delete entry')
+                        _describe -t subcmds 'catalog subcommand' subcmds
+                    else
+                        case $words[2] in
+                            show|delete)
+                                local -a names
+                                names=(${(f)"$(_ghdeb_get_catalog_names)"})
+                                _describe -t names 'name' names
+                                ;;
+                            add)
+                                if (( CURRENT == 3 )); then
+                                    _message 'name'
+                                else
+                                    _arguments \
+                                        '--repo[GitHub repository (owner/repo)]:' \
+                                        '--url[Direct .deb URL template]:' \
+                                        '--pretty-name[Display name]:' \
+                                        '--website[Website URL]:' \
+                                        '--summary[Package summary]:' \
+                                        '--gpg-key[GPG public key URL]:'
+                                fi
+                                ;;
+                        esac
+                    fi
                     ;;
             esac
             ;;

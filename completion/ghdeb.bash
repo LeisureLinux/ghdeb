@@ -41,7 +41,7 @@ _ghdeb() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
     
-    commands="install upgrade reinstall scan search list ls show info history remove rm purge clean set-repo test-homepage version help"
+    commands="install upgrade reinstall scan search list ls catalog show info history remove rm purge clean set-repo test-homepage version help"
     
     # 如果是第一个参数，补全子命令
     if [ $COMP_CWORD -eq 1 ]; then
@@ -82,6 +82,21 @@ _ghdeb() {
             ;;
         search)
             # 不补全，用户输入搜索词
+            ;;
+        catalog)
+            # catalog 子命令补全
+            if [ $COMP_CWORD -eq 2 ]; then
+                COMPREPLY=( $(compgen -W "list show search add delete" -- "$cur") )
+            elif [ "${COMP_WORDS[2]}" = "show" ] || [ "${COMP_WORDS[2]}" = "delete" ]; then
+                local names=$(_ghdeb_get_catalog_names)
+                COMPREPLY=( $(compgen -W "$names" -- "$cur") )
+            elif [ "${COMP_WORDS[2]}" = "add" ]; then
+                if [ $COMP_CWORD -eq 3 ]; then
+                    : # 用户输入新名称
+                else
+                    COMPREPLY=( $(compgen -W "--repo --url --pretty-name --website --summary --gpg-key" -- "$cur") )
+                fi
+            fi
             ;;
     esac
     

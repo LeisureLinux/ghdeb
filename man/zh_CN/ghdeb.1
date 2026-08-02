@@ -1,6 +1,6 @@
-.TH GHDEB 1 "2026-08-01" "ghdeb 0.5.1" "用户命令"
+.TH GHDEB 1 "2026-08-02" "ghdeb 0.6.0" "用户命令"
 .SH 名称
-ghdeb \- 从 GitHub Releases 安装 .deb 包
+ghdeb \- 管理从 GitHub Releases 下载的 .deb 包
 .SH 概要
 .B ghdeb
 .I 命令
@@ -13,13 +13,24 @@ ghdeb \- 从 GitHub Releases 安装 .deb 包
 .SS install
 .B ghdeb install
 .IB owner / repo [ @tag ]
+.br
+.B ghdeb install
+.I 短名称
 .PP
 安装或升级包到指定版本。如未指定 tag，则使用最新稳定版。
+支持使用目录中的短名称（如
+.IR bat 、
+.IR fd ）。
 .SS upgrade
 .B ghdeb upgrade
 .RI [ owner/repo ]
 .PP
 升级已管理的包。如未指定包名，则升级所有已管理的包。升级前自动扫描 orphan 包。
+.SS reinstall
+.B ghdeb reinstall
+.I 包名
+.PP
+强制重新安装指定包，下载并安装最新 release。历史记录标记为重装。
 .SS scan
 .B ghdeb scan
 .RB [ \-\-deep ]
@@ -28,6 +39,11 @@ ghdeb \- 从 GitHub Releases 安装 .deb 包
 .TP
 .B \-\-deep
 同时抓取每个包的 Homepage URL，尝试从中提取 GitHub 仓库链接。
+.SS search
+.B ghdeb search
+.I 关键词
+.PP
+在包目录中搜索，支持按名称、显示名、简介匹配。支持正则表达式。
 .SS list
 .B ghdeb list
 .RB [ \-\-refresh ]
@@ -36,6 +52,66 @@ ghdeb \- 从 GitHub Releases 安装 .deb 包
 .TP
 .B \-\-refresh
 强制刷新版本缓存，清除所有缓存的 release 数据并从 GitHub API 重新获取。
+.SS catalog
+.B ghdeb catalog
+.I 子命令
+.PP
+管理包目录。目录将短名称映射到 GitHub 仓库（或直接 .deb URL），
+用于短名称安装。
+.RS
+.TP
+.B ghdeb catalog list
+列出系统和用户目录中的所有条目。
+.TP
+.B ghdeb catalog show
+.I 名称
+显示目录条目的详细信息。
+.TP
+.B ghdeb catalog search
+.I 关键词
+搜索目录（与顶层
+.B search
+命令相同）。
+.TP
+.B ghdeb catalog add
+.I 名称
+.B \-\-repo
+.I owner/repo
+.RB [ \-\-url
+.I deb-url ]
+.RB [ \-\-pretty-name
+.I 名称 ]
+.RB [ \-\-website
+.I url ]
+.RB [ \-\-summary
+.I 简介 ]
+.RB [ \-\-gpg-key
+.I url ]
+向用户目录
+.RI ( ~/.config/ghdeb/catalog.toml )
+添加条目。
+.B \-\-repo
+和
+.B \-\-url
+至少需要指定一个。若指定
+.B \-\-url
+，则包可从直接 .deb 下载 URL 安装（非 GitHub 来源）。
+.B \-\-gpg-key
+指定 GPG 公钥 URL，用于签名校验。
+.TP
+.B ghdeb catalog delete
+.I 名称
+从用户目录中删除条目。
+.RE
+.SS show / info
+.B ghdeb show
+.I 包名
+.PP
+显示仓库的最新 release 信息，包括匹配当前架构的下载资源。
+.B info
+是
+.B show
+的别名。
 .SS history
 .B ghdeb history
 .IB owner / repo
@@ -46,21 +122,70 @@ ghdeb \- 从 GitHub Releases 安装 .deb 包
 .IB owner / repo
 .PP
 标记包为已移除。包本身不会被卸载，仅将 ghdeb 管理记录标记为移除。历史记录保留。
+.SS purge
+.B ghdeb purge
+.I 包名
+.PP
+使用
+.B apt-get purge
+卸载软件包，并用
+.B autoremove
+清理依赖。同时移除 ghdeb 管理记录。
+.SS clean
+.B ghdeb clean
+.RB [ \-\-dry\-run ]
+.PP
+清理
+.B ~/.cache/ghdeb/
+中缓存的 .deb 文件。使用
+.B \-\-dry\-run
+可预览将被删除的文件而不实际删除。
 .SS set\-repo
 .B ghdeb set\-repo
-.I pkg
+.I 包名
 .IB owner / repo
 .PP
 为之前扫描但未分配仓库的包设置 GitHub 仓库。
-.SS info
-.B ghdeb info
-.IB owner / repo
-.PP
-显示仓库的最新 release 信息，包括匹配当前架构的下载资源。
 .SS version
 .B ghdeb version
 .PP
 显示 ghdeb 版本。
+.SH 目录系统
+包目录采用 TOML 格式，支持两层：
+.TP
+.B /usr/share/ghdeb/catalog.toml
+系统级目录（随 ghdeb 一起安装）。
+.TP
+.B ~/.config/ghdeb/catalog.toml
+用户目录。同名条目覆盖系统目录。
+.PP
+目录条目格式：
+.EX
+[bat]
+repo = "sharkdp/bat"
+pretty_name = "bat"
+website = "https://github.com/sharkdp/bat"
+summary = "A cat(1) clone with syntax highlighting"
+.EE
+.PP
+非 GitHub 来源可使用直接 URL 模板：
+.EX
+[myapp]
+url = "https://example.com/releases/myapp_{version}_{arch}.deb"
+pretty_name = "我的应用"
+summary = "自定义应用"
+.EE
+.PP
+URL 占位符：
+.B {version}
+（去掉前导 v 的版本号）、
+.B {arch}
+（dpkg 架构名称）。
+.SH GPG 校验
+当目录条目包含
+.B gpg_key
+字段时，ghdeb 会在下载 .deb 包后使用指定的 GPG 公钥尝试验证签名。
+若校验失败，安装将被中止。
 .SH 架构匹配
 .B ghdeb
 通过
@@ -98,6 +223,12 @@ GitHub 个人访问令牌。将 API 速率限制从 60 次/小时（未认证）
 环境变量决定。中文 (zh_*) 产生中文输出；其他所有 locale 产生英文输出。
 .SH 文件
 .TP
+.B /usr/share/ghdeb/catalog.toml
+系统包目录。
+.TP
+.B ~/.config/ghdeb/catalog.toml
+用户包目录（覆盖系统条目）。
+.TP
 .B ~/.cache/ghdeb/releases.json
 Release 版本缓存（24 小时 TTL）。
 .TP
@@ -115,26 +246,56 @@ Release 版本缓存（24 小时 TTL）。
 错误（参数无效、网络失败、安装失败等）。
 .SH 示例
 .TP
+.B ghdeb install bat
+通过短名称安装 bat。
+.TP
 .B ghdeb install LeisureLinux/ghdeb
 安装 ghdeb 最新版。
 .TP
-.B ghdeb install LeisureLinux/ghdeb@v0.5.1
+.B ghdeb install LeisureLinux/ghdeb@v0.6.0
 安装 ghdeb 指定版本。
 .TP
 .B ghdeb upgrade
 升级所有已管理的包。
 .TP
-.B ghdeb upgrade LeisureLinux/ghdeb
-仅升级 ghdeb。
+.B ghdeb search monitor
+搜索目录中包含 "monitor" 的包。
 .TP
-.B ghdeb scan --deep
-扫描 orphan 包，抓取 Homepage 查找 GitHub 链接。
+.B ghdeb catalog list
+列出所有目录条目。
 .TP
-.B ghdeb list --refresh
-列出所有包，强制刷新最新版本检查。
+.B ghdeb catalog add myapp \-\-repo user/myapp \-\-summary "我的应用"
+向用户目录添加自定义条目。
 .TP
-.B ghdeb set\-repo ghdeb LeisureLinux/ghdeb
-为之前扫描的包分配 GitHub 仓库。
+.B ghdeb catalog add myapp \-\-url "https://example.com/myapp_{version}_{arch}.deb"
+添加非 GitHub 来源到目录。
+.TP
+.B ghdeb catalog delete myapp
+从用户目录删除自定义条目。
+.TP
+.B ghdeb clean \-\-dry\-run
+预览将被清理的缓存文件。
+.TP
+.B ghdeb purge rustdesk
+卸载 rustdesk 并清理。
+.SH SHELL 补全
+.B ghdeb
+提供 bash、zsh 和 fish 的补全脚本。安装后新 shell 自动生效。
+.PP
+.B bash:
+source /usr/share/bash-completion/completions/ghdeb
+.br
+或重启 shell。
+.PP
+.B zsh:
+运行
+.I compinit
+或重启 shell。补全安装在
+.IR /usr/share/zsh/site-functions/_ghdeb 。
+.PP
+.B fish:
+补全安装在
+.IR /usr/share/fish/vendor_completions.d/ghdeb.fish 。
 .SH 参见
 .BR dpkg (1),
 .BR apt (8)
