@@ -34,16 +34,6 @@ are upgraded. Automatically scans for orphan packages before upgrading.
 .PP
 Force reinstall a package by downloading and installing the latest release
 again. The history entry is marked as a reinstall.
-.SS scan
-.B ghdeb scan
-.RB [ \-\-deep ]
-.PP
-Scan the system for GitHub-sourced orphan packages (packages installed without
-an apt source) and optionally add them to management.
-.TP
-.B \-\-deep
-Also fetch each package's Homepage URL and try to extract a GitHub repository
-link from it.
 .SS search
 .B ghdeb search
 .I pattern
@@ -52,14 +42,16 @@ Search the package catalog by name, pretty name, or summary. Supports
 regular expressions.
 .SS list
 .B ghdeb list
-.RB [ \-\-refresh ]
+.RB [ \-\-json ]
 .PP
-List all managed packages, showing recorded version, system version, latest
-available version, and upgrade status.
+List all managed packages from the local catalog and state (fully offline).
+Shows short name, repo, installed version, and recorded version. No network
+access is performed; use
+.B validate
+to check for newer versions.
 .TP
-.B \-\-refresh
-Force refresh the version cache by clearing all cached release data and
-re-fetching from GitHub API.
+.B \-\-json
+Output the list as JSON.
 .SS catalog
 .B ghdeb catalog
 .I subcommand

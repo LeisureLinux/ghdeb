@@ -31,14 +31,6 @@ ghdeb \- 管理从 GitHub Releases 下载的 .deb 包
 .I 包名
 .PP
 强制重新安装指定包，下载并安装最新 release。历史记录标记为重装。
-.SS scan
-.B ghdeb scan
-.RB [ \-\-deep ]
-.PP
-扫描系统中的 GitHub 来源 orphan 包（无 apt 源的已安装包），并可选择纳入管理。
-.TP
-.B \-\-deep
-同时抓取每个包的 Homepage URL，尝试从中提取 GitHub 仓库链接。
 .SS search
 .B ghdeb search
 .I 关键词
@@ -46,12 +38,15 @@ ghdeb \- 管理从 GitHub Releases 下载的 .deb 包
 在包目录中搜索，支持按名称、显示名、简介匹配。支持正则表达式。
 .SS list
 .B ghdeb list
-.RB [ \-\-refresh ]
+.RB [ \-\-json ]
 .PP
-列出所有已管理的包，显示记录版本、系统版本、最新可用版本和升级状态。
+纯本地列出所有已管理的包（不联网）。显示短名称、仓库、已装版本和记录版本。
+如需检查是否有新版本，请使用
+.B validate
+命令。
 .TP
-.B \-\-refresh
-强制刷新版本缓存，清除所有缓存的 release 数据并从 GitHub API 重新获取。
+.B \-\-json
+以 JSON 格式输出列表。
 .SS catalog
 .B ghdeb catalog
 .I 子命令
