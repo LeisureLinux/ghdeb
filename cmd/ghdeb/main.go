@@ -17,7 +17,7 @@ import (
 	"github.com/leisurelinux/ghdeb/internal/state"
 )
 
-const version = "0.6.5"
+const version = "0.6.6"
 
 func main() {
 	fmt.Printf(T("ghdeb v%s - 管理从 GitHub Releases 下载的 .deb 包 © LeisureLinux\n", "ghdeb v%s - manage .deb packages downloaded from GitHub Releases © LeisureLinux\n"), version)
@@ -1216,6 +1216,7 @@ func cmdList(args []string) error {
 	names := cat.SortedNames()
 	installedCount := 0
 	upgradableCount := 0
+	orphanCount := 0
 
 	for _, name := range names {
 		entry := cat.Packages[name]
@@ -1305,9 +1306,12 @@ func cmdList(args []string) error {
 		rec.RefreshSystemInfo(rec.PkgName)
 		sysVer := rec.SystemVersion
 		if sysVer == "" {
-			sysVer = "-"
+			// 未实际安装，跳过
+			continue
 		}
 		status := "✅ " + T("已安装", "installed")
+		installedCount++
+		orphanCount++
 		fmt.Printf("%s %s %s %s %s\n",
 			padRight(rec.PkgName, 20),
 			padRight(repoKey, 25),
@@ -1317,7 +1321,8 @@ func cmdList(args []string) error {
 	}
 
 	fmt.Println(strings.Repeat("-", 90))
-	fmt.Printf(T("共 %d 个包，%d 个已安装", "Total %d packages, %d installed"), len(names), installedCount)
+	totalCount := len(names) + orphanCount
+	fmt.Printf(T("共 %d 个包，%d 个已安装", "Total %d packages, %d installed"), totalCount, installedCount)
 	if upgradableCount > 0 {
 		fmt.Printf(T("，%d 个可升级", ", %d upgradable"), upgradableCount)
 	}
