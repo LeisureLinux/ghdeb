@@ -20,7 +20,7 @@ import (
 	"github.com/leisurelinux/ghdeb/internal/state"
 )
 
-const version = "0.7.12"
+const version = "0.7.13"
 
 func main() {
 	// 检查是否使用 --json，如果是则不打印 banner
@@ -1030,11 +1030,23 @@ func removeFromSystemCatalog(name string) error {
 	entries := make(map[string]catalog.CatalogEntry)
 	toml.Decode(string(data), &entries)
 
-	if _, ok := entries[name]; !ok {
-		return fmt.Errorf("系统目录中未找到 %s", name)
+	// 支持短名称和 owner/repo 两种写法，与 show 的 repo 反查保持一致
+	key := name
+	if _, ok := entries[key]; !ok {
+		found := ""
+		for k, e := range entries {
+			if e.Repo == name {
+				found = k
+				break
+			}
+		}
+		if found == "" {
+			return fmt.Errorf("系统目录中未找到 %s", name)
+		}
+		key = found
 	}
 
-	delete(entries, name)
+	delete(entries, key)
 	return writeSystemCatalog(path, entries)
 }
 
