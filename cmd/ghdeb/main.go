@@ -20,7 +20,7 @@ import (
 	"github.com/leisurelinux/ghdeb/internal/state"
 )
 
-const version = "0.7.3"
+const version = "0.7.4"
 
 func main() {
 	// 检查是否使用 --json，如果是则不打印 banner
@@ -251,7 +251,7 @@ func cmdInstall(args []string) error {
 		return err
 	}
 	repoKey := owner + "/" + repo
-	if existing := st.Get(repoKey); existing != nil && existing.CurrentVersion == release.TagName && !existing.Removed {
+	if existing := st.Get(repoKey); existing != nil && versionEqual(existing.CurrentVersion, release.TagName) && !existing.Removed {
 		fmt.Printf(T("✅ %s 已安装版本 %s，无需重复安装\n", "✅ %s version %s already installed, no need to reinstall\n"), repo, release.TagName)
 		return nil
 	}
@@ -418,7 +418,7 @@ func cmdUpgrade(args []string) error {
 		}
 		client.SetCachedRelease(t.owner, t.repo, release.TagName)
 
-		if t.pkg != nil && t.pkg.CurrentVersion == release.TagName && !t.pkg.Removed {
+		if t.pkg != nil && versionEqual(t.pkg.CurrentVersion, release.TagName) && !t.pkg.Removed {
 			fmt.Printf(T("✅ 已是最新版本 %s\n", "✅ Already latest version %s\n"), release.TagName)
 			continue
 		}
@@ -1418,8 +1418,8 @@ func cmdList(args []string) error {
 			installedVer = sysVer
 			installedCount++
 
-			// 比较版本
-			if latestVer != "-" && latestVer != rec.CurrentVersion {
+			// 比较版本（忽略 v 前缀）
+			if latestVer != "-" && !versionEqual(latestVer, rec.CurrentVersion) {
 				status = "🔄 " + T("可升级", "upgradable")
 				upgradableCount++
 			} else {
@@ -1786,6 +1786,18 @@ func displayWidth(s string) int {
 		}
 	}
 	return width
+}
+
+// normalizeVersion 规范化版本号，去掉 v 前缀用于比较
+func normalizeVersion(v string) string {
+	v = strings.TrimPrefix(v, "v")
+	v = strings.TrimPrefix(v, "V")
+	return v
+}
+
+// versionEqual 比较两个版本是否相等（忽略 v 前缀）
+func versionEqual(a, b string) bool {
+	return normalizeVersion(a) == normalizeVersion(b)
 }
 
 // padRight 右填充空格到指定显示宽度
