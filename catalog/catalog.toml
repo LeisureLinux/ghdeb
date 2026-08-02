@@ -1,7 +1,6 @@
 # ghdeb 包目录 (Known Packages Catalog)
 # 格式：[短名称] + repo / pretty_name / website / summary
 #
-# 用户可在 ~/.config/ghdeb/catalog.toml 添加自定义条目（同名覆盖）
 # 也可在 /etc/ghdeb/catalog.toml 添加系统级条目
 
 # === 开发工具 ===
@@ -84,7 +83,7 @@ pretty_name = "duf"
 website = "https://github.com/muesli/duf"
 summary = "Disk Usage/Free Utility"
 
-[dust]
+[du-dust]
 repo = "bootandy/dust"
 pretty_name = "dust"
 website = "https://github.com/bootandy/dust"
@@ -177,12 +176,6 @@ repo = "logseq/logseq"
 pretty_name = "Logseq"
 website = "https://logseq.com"
 summary = "A privacy-first, open-source platform for knowledge management"
-
-[joplin]
-repo = "laurent22/joplin"
-pretty_name = "Joplin"
-website = "https://joplinapp.org"
-summary = "Open source note-taking and to-do application"
 
 # === 密码管理 ===
 
