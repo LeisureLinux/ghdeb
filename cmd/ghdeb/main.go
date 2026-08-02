@@ -21,7 +21,7 @@ import (
 	"github.com/leisurelinux/ghdeb/internal/state"
 )
 
-const version = "0.7.25"
+var version = "dev" // 构建时通过 -ldflags -X 注入，避免多版本号漏改
 
 func main() {
 	// 检查是否使用 --json，如果是则不打印 banner

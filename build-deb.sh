@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-VERSION="0.7.25"
+VERSION="0.7.26"
 
 # 支持的架构映射: go arch -> dpkg arch
 declare -A ARCH_MAP=(
@@ -32,7 +32,7 @@ rm -rf "dist/${PKG_NAME}"*
 
 # 交叉编译二进制
 echo "📦 编译二进制文件 (GOOS=linux GOARCH=${TARGET_GOARCH})..."
-GOOS=linux GOARCH="${TARGET_GOARCH}" go build -ldflags="-s -w" -o dist/ghdeb ./cmd/ghdeb/
+GOOS=linux GOARCH="${TARGET_GOARCH}" go build -ldflags="-s -w -X main.version=${VERSION}" -o dist/ghdeb ./cmd/ghdeb/
 
 # 创建包目录结构
 echo "📁 创建包目录结构..."
