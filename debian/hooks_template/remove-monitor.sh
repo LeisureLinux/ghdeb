@@ -1,12 +1,12 @@
 #!/bin/bash
 # ghdeb dpkg hook: monitor package removal and update status automatically
 # This script is triggered by Dpkg::Post-Invoke in apt config
-# 同步维护 /var/cache/ghdeb/installed.json（状态历史）与 cache.json（统一缓存）
+# 同步维护 /var/cache/ghdeb/history.json（操作历史）与 cache.json（统一缓存）
 
 # 容错：如果自身或必要文件不存在，静默退出
 [ -x /usr/share/ghdeb/hooks/remove-monitor.sh ] || exit 0
 
-STATE_FILE="/var/cache/ghdeb/installed.json"
+STATE_FILE="/var/cache/ghdeb/history.json"
 CACHE_FILE="/var/cache/ghdeb/cache.json"
 
 # 检查状态文件是否存在

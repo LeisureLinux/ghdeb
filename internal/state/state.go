@@ -56,7 +56,7 @@ type State struct {
 
 // defaultStatePath 默认状态文件路径
 func defaultStatePath() string {
-	return "/var/cache/ghdeb/installed.json"
+	return "/var/cache/ghdeb/history.json"
 }
 
 // Load 从磁盘加载状态

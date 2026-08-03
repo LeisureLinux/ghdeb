@@ -13,12 +13,17 @@ install -d -m 755 -o root -g root /usr/share/ghdeb/hooks
 chown root:root /etc/ghdeb
 chown root:root /var/cache/ghdeb
 
-# 状态文件（root 写，其他只读）
-if [ ! -f /var/cache/ghdeb/installed.json ]; then
-    echo '{"packages":{}}' > /var/cache/ghdeb/installed.json
+# 历史文件（root 写，其他只读）
+# 兼容升级：老版本 installed.json 迁移为 history.json
+if [ ! -f /var/cache/ghdeb/history.json ] && [ -s /var/cache/ghdeb/installed.json ]; then
+    cp /var/cache/ghdeb/installed.json /var/cache/ghdeb/history.json
+    echo "   已迁移历史文件: /var/cache/ghdeb/installed.json -> /var/cache/ghdeb/history.json"
 fi
-chown root:root /var/cache/ghdeb/installed.json
-chmod 644 /var/cache/ghdeb/installed.json
+if [ ! -f /var/cache/ghdeb/history.json ]; then
+    echo '{"packages":{}}' > /var/cache/ghdeb/history.json
+fi
+chown root:root /var/cache/ghdeb/history.json
+chmod 644 /var/cache/ghdeb/history.json
 
 # catalog.toml 随包安装（curated 包列表，conffile）。仅修正所有权与权限。
 if [ -f /etc/ghdeb/catalog.toml ]; then
@@ -28,14 +33,14 @@ else
     echo "   ⚠️  catalog.toml 未随包安装（conffile 未被提取），请检查包完整性"
 fi
 
-# 迁移旧状态文件（从用户目录迁移到系统目录）
+# 迁移旧历史文件（从用户目录迁移到系统目录）
 for home_dir in /home/*; do
     OLD_STATE="$home_dir/.local/state/ghdeb/installed.json"
-    if [ -f "$OLD_STATE" ] && [ ! -s /var/cache/ghdeb/installed.json ]; then
-        cp "$OLD_STATE" /var/cache/ghdeb/installed.json
-        chown root:root /var/cache/ghdeb/installed.json
-        chmod 644 /var/cache/ghdeb/installed.json
-        echo "   已迁移状态文件: $OLD_STATE"
+    if [ -f "$OLD_STATE" ] && [ ! -s /var/cache/ghdeb/history.json ]; then
+        cp "$OLD_STATE" /var/cache/ghdeb/history.json
+        chown root:root /var/cache/ghdeb/history.json
+        chmod 644 /var/cache/ghdeb/history.json
+        echo "   已迁移历史文件: $OLD_STATE"
         break
     fi
 done
@@ -49,7 +54,7 @@ HOOK_EOF
 
 echo "✅ ghdeb 安装完成"
 echo "   配置路径: /etc/ghdeb/catalog.toml"
-echo "   状态文件: /var/cache/ghdeb/installed.json"
+echo "   历史文件: /var/cache/ghdeb/history.json"
 echo "   已安装 dpkg hook 用于自动跟踪包状态"
 
 exit 0

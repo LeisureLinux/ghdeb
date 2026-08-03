@@ -232,7 +232,7 @@ with a 24-hour TTL. Downloaded .deb files are cached in
 .BR /var/cache/ghdeb/ .
 .SH STATE
 Managed package records are stored in
-.BR /var/cache/ghdeb/installed.json .
+.BR /var/cache/ghdeb/history.json .
 .SH ENVIRONMENT
 .TP
 .B GITHUB_TOKEN
@@ -257,7 +257,7 @@ installed/latest versions, upgradeable; 24h TTL).
 .B /var/cache/ghdeb/*.deb
 Downloaded .deb package cache.
 .TP
-.B /var/cache/ghdeb/installed.json
+.B /var/cache/ghdeb/history.json
 Managed package state records.
 .SH EXIT STATUS
 .TP

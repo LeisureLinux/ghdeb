@@ -1679,7 +1679,6 @@ func cmdUpdate(args []string) error {
 		return nil
 	}
 
-	st, _ := state.Load()
 	client := gh.NewClient()
 	names := cat.SortedNames()
 	vlog("目录共 %d 个软件包", len(names))
@@ -1833,7 +1832,16 @@ func cmdUpdate(args []string) error {
 		}
 	}
 
-	// 4) 组装并写回快照（扁平化：从 catalog.toml 枚举，单 package 段）
+	// 4) 扫描系统已装包（一次读 /var/lib/dpkg/status），写入扁平化快照。
+	//    已装判定与版本号完全取自 dpkg 系统状态，不再依赖 history.json。
+	vlog("扫描系统已装包（/var/lib/dpkg/status）...")
+	installed := deb.ScanInstalledDpkg()
+	if installed == nil {
+		vlog("（读取 dpkg 状态库失败，视为无已装包）")
+		installed = make(map[string]*deb.DpkgPkg)
+	}
+	vlog("系统已装 dpkg 包 %d 个", len(installed))
+
 	vlog("组装并写回扁平化快照 %s ...", state.CachePath())
 	snap := state.LoadCache()
 	snap.UpdatedAt = time.Now().Format(time.RFC3339)
@@ -1848,25 +1856,16 @@ func cmdUpdate(args []string) error {
 
 		sp := &state.PkgState{Name: name, Repo: entry.Repo, Arch: sysArch}
 
-		// 已装信息：以 installed.json（ghdeb 管理历史）判定已装，
-		// 已装版本号始终用 dpkg-query 实查的系统版本
-		if st != nil && entry.Repo != "" {
-			rec := st.Get(entry.Repo)
-			if rec != nil && !rec.Removed {
-				sp.Installed = true
-				sp.InstallTime = rec.UpdatedAt
-				if rec.Arch != "" {
-					sp.Arch = rec.Arch
+		// 已装信息：从 dpkg 系统状态反查目录条目（名字优先 + repo 尾段兜底）
+		if entry.Repo != "" {
+			for _, cand := range deb.CandidatePkgNames(name, entry.Repo) {
+				if dp := installed[cand]; dp != nil {
+					sp.Installed = true
+					sp.InstalledVersion = dp.Version
+					sp.InstallTime = deb.InstallTimeOf(cand)
+					vlog("已装 %s (%s): dpkg 版本 %q，安装于 %s", name, cand, dp.Version, sp.InstallTime)
+					break
 				}
-				pkg := rec.PkgName
-				if pkg == "" {
-					pkg = rec.Repo
-				}
-				sp.InstalledVersion = state.QuerySystemVersion(pkg)
-				if le := rec.LatestEntry(); le != nil {
-					sp.PkgFile = le.DebFile
-				}
-				vlog("已装 %s: dpkg 版本 %q", name, sp.InstalledVersion)
 			}
 		}
 
