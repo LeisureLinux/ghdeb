@@ -258,7 +258,7 @@ If ghdeb saves you time, consider buying me a coffee ☕
 
 | 微信 / WeChat | 支付宝 / Alipay |
 |-------------|-----------------|
-| ![wechat](docs/donate/wechat.png) | ![alipay](docs/donate/alipay.png) |
+| ![wechat](docs/donate/wechat.jpg) | ![alipay](docs/donate/alipay.jpg) |
 
 [![Sponsor](https://img.shields.io/github/sponsors/LeisureLinux)](https://github.com/sponsors/LeisureLinux)
 
