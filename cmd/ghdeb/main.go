@@ -531,6 +531,12 @@ func cmdUpgrade(args []string) error {
 		} else {
 			st.SetInstall(repoKey, t.owner, t.repo, release.TagName, asset.Name, destPath, releaseURL, arch.DpkgArch, pkgName)
 		}
+
+		// 升级/安装成功后同样更新统一 cache.json 快照，使 list/upgrade 立即反映最新状态
+		shortName := ensureCatalogAfterInstall(t.owner, t.repo, repoKey)
+		if err := updateCacheAfterInstall(shortName, repoKey, release, asset, arch.DpkgArch); err != nil {
+			fmt.Fprintf(os.Stderr, "⚠️  %s: %v\n", T("更新缓存失败", "Update cache failed"), err)
+		}
 		upgraded++
 		if t.pkg != nil && t.pkg.Removed {
 			fmt.Printf(T("✅ 重新安装完成: %s %s\n", "✅ Reinstall complete: %s %s\n"), repoKey, release.TagName)

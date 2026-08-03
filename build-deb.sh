@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-VERSION="0.7.48"
+VERSION="0.7.49"
 
 # 架构规格表: 别名(参数) -> "GOARCH|GOARM|dpkg架构"
 #   GOOS 固定为 linux。
