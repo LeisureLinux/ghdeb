@@ -38,6 +38,12 @@ ghdeb \- 管理从 GitHub Releases 下载的 .deb 包
 在包目录中搜索，支持按名称、显示名、简介匹配。支持正则表达式。
 .SS update
 .B ghdeb update
+.RB [ \-\-verbose ]
+.PP
+加
+.BR \-\-verbose
+时，逐行显示后台步骤（目录加载、每包检查的缓存命中/拉取版本、.deb 资产校验、
+快照组装），替代紧凑的进度条。
 .PP
 类
 .B apt update

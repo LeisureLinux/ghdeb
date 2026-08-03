@@ -5,7 +5,7 @@
 ## Core Commands
 
 - `ghdeb install <owner/repo>[@tag]`: Install or upgrade a package from GitHub Releases. Auto-detects architecture and selects the matching .deb asset.
-- `ghdeb update`: Refresh version info like `apt update` — query latest version from GitHub, check locally installed version, determine upgradeability, and prune catalog entries without a matching-arch `.deb`. Writes results to a local snapshot.
+- `ghdeb update [--verbose]`: Refresh version info like `apt update` — query latest version from GitHub, check locally installed version, determine upgradeability, and prune catalog entries without a matching-arch `.deb`. Each fetch also validates the `.deb` asset in the same request (no second network round). Writes results to a local snapshot. `--verbose` prints per-package check details.
 - `ghdeb upgrade [owner/repo]`: Upgrade all managed packages, or a specific one.
 - `ghdeb list [--json]`: List all catalog entries, reading only the local snapshot produced by `ghdeb update` (no network).
 - `ghdeb info <owner/repo or pkgname>`: Show latest release information without installing.

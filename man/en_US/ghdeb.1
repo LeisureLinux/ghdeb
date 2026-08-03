@@ -42,6 +42,13 @@ Search the package catalog by name, pretty name, or summary. Supports
 regular expressions.
 .SS update
 .B ghdeb update
+.RB [ \-\-verbose ]
+.PP
+With
+.BR \-\-verbose ,
+print detailed background steps (catalog load, per-package check with cache hit
+or fetched version, asset validation, snapshot assembly) instead of the compact
+progress bar.
 .PP
 Similar to
 .B apt update

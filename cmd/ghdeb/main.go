@@ -98,7 +98,8 @@ func printUsage() {
 
 用法:
   ghdeb install <pkg|owner/repo>[@tag]  安装（支持短名称或 owner/repo）
-  ghdeb update                          刷新各包最新/已装版本信息到本地快照（类 apt update）
+  ghdeb update [--verbose]              刷新各包最新/已装版本信息到本地快照（类 apt update）
+  ghdeb update --verbose              显示后台各步骤与每个包检查明细
   ghdeb upgrade [pkg]                   升级包（不指定则升级所有）
   ghdeb reinstall <pkg>                 重新安装指定包
   ghdeb search <pattern>                在包目录中搜索
@@ -138,7 +139,8 @@ func printUsage() {
 
 Usage:
   ghdeb install <pkg|owner/repo>[@tag]  Install (short name or owner/repo)
-  ghdeb update                          Refresh latest/installed version info into local snapshot (like apt update)
+  ghdeb update [--verbose]              Refresh latest/installed version info into local snapshot (like apt update)
+  ghdeb update --verbose              Show background steps & per-package check details
   ghdeb upgrade [pkg]                   Upgrade packages (all if unspecified)
   ghdeb reinstall <pkg>                 Reinstall a package
   ghdeb search <pattern>                Search in package catalog
@@ -1651,6 +1653,22 @@ func cmdList(args []string) error {
 // cmdUpdate 类似 apt update：查询各包最新版本、本地已装版本，判定可升级性，
 // 校验并移除无 .deb 的目录条目，把结果写入 list 快照缓冲文件。
 func cmdUpdate(args []string) error {
+	// --verbose 开关：显示后台各步骤与每个包的检查明细
+	verbose := false
+	cmdArgs := make([]string, 0, len(args))
+	for _, a := range args {
+		if a == "--verbose" || a == "-verbose" {
+			verbose = true
+		} else {
+			cmdArgs = append(cmdArgs, a)
+		}
+	}
+	vlog := func(format string, v ...interface{}) {
+		if verbose {
+			fmt.Fprintf(os.Stderr, "  "+format+"\n", v...)
+		}
+	}
+
 	cat, err := catalog.Load()
 	if err != nil {
 		return fmt.Errorf("加载目录失败: %w", err)
@@ -1664,6 +1682,16 @@ func cmdUpdate(args []string) error {
 	st, _ := state.Load()
 	client := gh.NewClient()
 	names := cat.SortedNames()
+	vlog("目录共 %d 个软件包", len(names))
+
+	// 检测当前架构（一次即可）
+	sysArch := ""
+	var archInfo *deb.ArchInfo
+	if ai, aErr := deb.DetectArch(); aErr == nil && ai != nil {
+		sysArch = ai.DpkgArch
+		archInfo = ai
+	}
+	vlog("目标架构: %s", sysArch)
 
 	// 1) 收集所有需检查的 GitHub 仓库条目
 	type task struct{ name, owner, repo string }
@@ -1691,19 +1719,27 @@ func cmdUpdate(args []string) error {
 		"Need to check latest versions of %d packages on GitHub, estimated ~%d minutes\n"),
 		total, mm)
 
-	// 2) 并发检查（8 路限流），单行进度条实时刷新
+	// 2) 并发检查（8 路限流），单行进度条实时刷新。
+	//    每取到一个 release，同时校验当前架构是否有对应 .deb 资产，
+	//    把"版本号 + 是否有 .deb"一并拿到，避免二次网络往返。
 	latestVer := make(map[string]string) // key = "owner/repo"
+	hasDeb := make(map[string]bool)      // key = "owner/repo"，是否含当前架构 .deb
 	var (
-		mu         sync.Mutex // 保护 latestVer 与 releases 缓存
+		mu         sync.Mutex // 保护 latestVer / hasDeb / 缓存写入
 		progressMu sync.Mutex // 保护进度条输出与完成计数
 		done       int
 	)
-	// printProgress 刷新进度条（\r 单行覆盖）
-	printProgress := func(name, owner, repo string) {
+	// printProgress 刷新进度条（\r 单行覆盖）；verbose 时改为逐行明细
+	printProgress := func(name, owner, repo, note string) {
 		progressMu.Lock()
 		done++
-		fmt.Fprintf(os.Stderr, "\r  %s %s，<%s/%s> ...  [%d/%d]  ",
-			T("正在检查", "Checking"), name, owner, repo, done, total)
+		if verbose {
+			fmt.Fprintf(os.Stderr, "  [%d/%d] %-20s <%s/%s> %s\n",
+				done, total, name, owner, repo, note)
+		} else {
+			fmt.Fprintf(os.Stderr, "\r  %s %s，<%s/%s> ...  [%d/%d]  ",
+				T("正在检查", "Checking"), name, owner, repo, done, total)
+		}
 		progressMu.Unlock()
 	}
 	sem := make(chan struct{}, 8)
@@ -1714,6 +1750,7 @@ func cmdUpdate(args []string) error {
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
+			note := ""
 			// 缓存命中直接取缓存版本（快速推进进度条），否则请求 GitHub
 			ver := client.GetCachedRelease(t.owner, t.repo)
 			if ver == "" {
@@ -1721,21 +1758,42 @@ func cmdUpdate(args []string) error {
 					ver = rel.TagName
 					mu.Lock()
 					client.SetCachedRelease(t.owner, t.repo, ver)
+					result, _ := gh.FindAssetWithFallback(rel, archInfo)
+					hasDeb[t.owner+"/"+t.repo] = archInfo != nil && result != nil && result.Asset != nil
 					mu.Unlock()
+					note = fmt.Sprintf("version=%s hasDeb=%v", ver, hasDeb[t.owner+"/"+t.repo])
+				} else if errors.Is(relErr, gh.ErrNoStableRelease) {
+					// 无稳定 release（全为 draft/prerelease）→ 视为无匹配 .deb
+					mu.Lock()
+					hasDeb[t.owner+"/"+t.repo] = false
+					mu.Unlock()
+					note = "no-stable-release → 无 .deb"
+				} else {
+					note = "network/api error（保留条目）"
 				}
+			} else {
+				// 缓存命中：无 release 对象，假定有效（避免额外网络往返）
+				mu.Lock()
+				hasDeb[t.owner+"/"+t.repo] = true
+				mu.Unlock()
+				note = fmt.Sprintf("cached version=%s", ver)
 			}
 			if ver != "" {
 				mu.Lock()
 				latestVer[t.owner+"/"+t.repo] = ver
 				mu.Unlock()
 			}
-			printProgress(t.name, t.owner, t.repo)
+			printProgress(t.name, t.owner, t.repo, note)
 		}(t)
 	}
 	wg.Wait()
-	fmt.Fprintln(os.Stderr)
+	if !verbose {
+		fmt.Fprintln(os.Stderr)
+	}
+	vlog("并发检查完成：%d 个仓库", total)
 
-	// 3) 校验并移除无当前架构 .deb 的条目（写入系统目录）
+	// 3) 校验并移除无当前架构 .deb 的条目（写入系统目录）。
+	//    直接复用并发阶段拿到的 hasDeb 结果，不再二次访问网络。
 	path := catalog.SystemCatalogPath()
 	curData, rErr := os.ReadFile(path)
 	if rErr != nil {
@@ -1756,29 +1814,29 @@ func cmdUpdate(args []string) error {
 		if perr != nil {
 			continue
 		}
-		has, cErr := checkRepoDeb(owner, repo)
-		if cErr != nil {
-			continue // 网络/API 错误：保留，避免误删
+		valid, known := hasDeb[owner+"/"+repo]
+		if !known {
+			// 无版本信息或检查失败：保留，避免误删
+			continue
 		}
-		if !has {
+		if !valid {
+			vlog("移除 %s（当前架构无 .deb 资产）", name)
 			removed++
 			removedNames = append(removedNames, name)
 			delete(current, name)
 		}
 	}
 	if removed > 0 {
+		vlog("写入系统目录 %s（移除 %d 条）", path, removed)
 		if err := writeSystemCatalog(path, current, "ghdeb"); err != nil {
 			return fmt.Errorf("写入目录失败: %w", err)
 		}
 	}
 
 	// 4) 组装并写回快照（扁平化：从 catalog.toml 枚举，单 package 段）
+	vlog("组装并写回扁平化快照 %s ...", state.CachePath())
 	snap := state.LoadCache()
 	snap.UpdatedAt = time.Now().Format(time.RFC3339)
-	sysArch := ""
-	if ai, aErr := deb.DetectArch(); aErr == nil && ai != nil {
-		sysArch = ai.DpkgArch
-	}
 
 	for _, name := range names {
 		// 已因无 .deb 被移除的条目不进快照
@@ -1808,6 +1866,7 @@ func cmdUpdate(args []string) error {
 				if le := rec.LatestEntry(); le != nil {
 					sp.PkgFile = le.DebFile
 				}
+				vlog("已装 %s: dpkg 版本 %q", name, sp.InstalledVersion)
 			}
 		}
 
@@ -1829,13 +1888,13 @@ func cmdUpdate(args []string) error {
 	if err := state.SaveCache(snap); err != nil {
 		return fmt.Errorf("保存 list 快照失败: %w", err)
 	}
+	vlog("快照已保存到 %s", state.CachePath())
 
 	fmt.Printf(T("更新 %d 个软件包信息，移除 %d 条不满足要求（无 .deb 包）的记录\n",
 		"Updated info for %d packages, removed %d records without a .deb package\n"),
 		len(snap.Packages), removed)
 	return nil
 }
-
 func containsStr(list []string, s string) bool {
 	for _, v := range list {
 		if v == s {
