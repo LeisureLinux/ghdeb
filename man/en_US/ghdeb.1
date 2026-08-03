@@ -1,4 +1,4 @@
-.TH GHDEB 1 "2026-08-02" "ghdeb 0.6.0" "User Commands"
+.TH GHDEB 1 "2026-08-03" "ghdeb 0.7.49" "User Commands"
 .SH NAME
 ghdeb \- Install .deb packages from GitHub Releases
 .SH SYNOPSIS
@@ -209,20 +209,6 @@ When a catalog entry includes a
 field, ghdeb will attempt to verify the .deb package signature after
 download using the specified GPG public key. If verification fails, the
 installation is aborted.
-.SH ARCHITECTURE MATCHING
-.B ghdeb
-automatically detects the system architecture via
-.B dpkg \-\-print\-architecture
-and matches release assets by filename patterns:
-.TS
-tab(@);
-l l.
-System Arch@Matched Keywords
-amd64@amd64, x86_64, x86-64, x64
-arm64@arm64, aarch64
-armhf@armhf, armv7l, armv7
-i386@i386, x86, i686, 386
-.TE
 .SH CACHE
 .B ghdeb
 caches each catalog package's state (installed, installed version, GitHub
@@ -233,13 +219,6 @@ with a 24-hour TTL. Downloaded .deb files are cached in
 .SH STATE
 Managed package records are stored in
 .BR /var/cache/ghdeb/history.json .
-.SH ENVIRONMENT
-.TP
-.B GITHUB_TOKEN
-.TQ
-.B GH_TOKEN
-GitHub personal access token. Increases API rate limit from 60 requests/hour
-(unauthenticated) to 5,000 requests/hour.
 .SH LOCALE
 Output language is determined by the
 .B LANG
@@ -274,7 +253,7 @@ Install bat using its catalog short name.
 .B ghdeb install LeisureLinux/ghdeb
 Install the latest version of ghdeb.
 .TP
-.B ghdeb install LeisureLinux/ghdeb@v0.6.0
+.B ghdeb install LeisureLinux/ghdeb@v0.7.49
 Install a specific version of ghdeb.
 .TP
 .B ghdeb update

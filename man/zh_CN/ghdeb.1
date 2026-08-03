@@ -1,4 +1,4 @@
-.TH GHDEB 1 "2026-08-02" "ghdeb 0.6.0" "用户命令"
+.TH GHDEB 1 "2026-08-03" "ghdeb 0.7.49" "用户命令"
 .SH 名称
 ghdeb \- 管理从 GitHub Releases 下载的 .deb 包
 .SH 概要
@@ -200,20 +200,6 @@ URL 占位符：
 .B gpg_key
 字段时，ghdeb 会在下载 .deb 包后使用指定的 GPG 公钥尝试验证签名。
 若校验失败，安装将被中止。
-.SH 架构匹配
-.B ghdeb
-通过
-.B dpkg \-\-print\-architecture
-自动检测系统架构，并按文件名模式匹配 release 资源：
-.TS
-tab(@);
-l l.
-系统架构@匹配关键词
-amd64@amd64, x86_64, x86-64, x64
-arm64@arm64, aarch64
-armhf@armhf, armv7l, armv7
-i386@i386, x86, i686, 386
-.TE
 .SH 缓存
 .B ghdeb
 将每个目录包的状态（已装、已装版本、GitHub 最新版本、可升级）扁平化
@@ -226,12 +212,6 @@ i386@i386, x86, i686, 386
 已管理包的记录存储在
 .B /var/cache/ghdeb/history.json
 中。
-.SH 环境变量
-.TP
-.B GITHUB_TOKEN
-.TQ
-.B GH_TOKEN
-GitHub 个人访问令牌。将 API 速率限制从 60 次/小时（未认证）提高到 5,000 次/小时。
 .SH 语言环境
 输出语言由
 .B LANG
