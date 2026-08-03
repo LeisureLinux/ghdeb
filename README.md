@@ -1,7 +1,14 @@
 # ghdeb — Install & Upgrade .deb Packages from GitHub Releases
 
+![ghdeb-demo](docs/demo/ghdeb-demo.gif)
+
+> ⭐ **ghdeb saves you time? Give it a star!** It helps other Linux users discover this tool.
+> [⭐ Star ghdeb](https://github.com/LeisureLinux/ghdeb) · [🍴 Fork](https://github.com/LeisureLinux/ghdeb/fork)
+
 [![Release](https://img.shields.io/github/v/release/LeisureLinux/ghdeb)](https://github.com/LeisureLinux/ghdeb/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![GitHub Stars](https://img.shields.io/github/stars/LeisureLinux/ghdeb?style=social)](https://github.com/LeisureLinux/ghdeb/stargazers)
+[![GitHub Forks](https://img.shields.io/github/forks/LeisureLinux/ghdeb?style=social)](https://github.com/LeisureLinux/ghdeb/network)
 
 **ghdeb** is a lightweight CLI tool that manages `.deb` packages downloaded from GitHub Releases — one command, no PPA, no manual download. It ships with a curated list of known GitHub `.deb` packages for short-name installs.
 
@@ -244,6 +251,16 @@ ghdeb focuses on `.deb` packages. For other asset types (AppImage, tarball), use
 
 ### Is ghdeb safe to use?
 ghdeb downloads `.deb` files from official GitHub Releases and installs them with `dpkg -i`. It sets `DEBIAN_FRONTEND=noninteractive` to avoid interactive prompts. Always review packages from third-party repositories.
+
+## ☕ Support / 打赏支持
+
+If ghdeb saves you time, consider buying me a coffee ☕
+
+| 微信 / WeChat | 支付宝 / Alipay |
+|-------------|-----------------|
+| ![wechat](docs/donate/wechat.png) | ![alipay](docs/donate/alipay.png) |
+
+[![Sponsor](https://img.shields.io/github/sponsors/LeisureLinux)](https://github.com/sponsors/LeisureLinux)
 
 ## License
 
