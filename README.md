@@ -107,9 +107,10 @@ ghdeb automatically detects your system architecture (`dpkg --print-architecture
 `ghdeb update` works like `apt update`: it queries each catalog entry's latest
 version from GitHub, checks the locally installed version, determines which
 packages are upgradeable, and removes catalog entries that no longer provide a
-`.deb` for your architecture. The results are saved to a local snapshot
-(`~/.cache/ghdeb/snapshot.json`), and `ghdeb list` reads only that snapshot
-without hitting the network.
+`.deb` for your architecture. The results are saved to a single system-level cache file
+(`/var/cache/ghdeb/cache.json`), and `ghdeb list` reads only that cache without
+hitting the network. Like `apt update`, `ghdeb update` writes to the root-owned
+system cache and may prompt for `sudo`.
 
 ```bash
 # Refresh version info and prune stale entries

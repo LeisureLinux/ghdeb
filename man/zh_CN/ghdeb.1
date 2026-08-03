@@ -42,8 +42,12 @@ ghdeb \- 管理从 GitHub Releases 下载的 .deb 包
 类
 .B apt update
 。查询目录中各 GitHub 仓库的最新版本、本地已装版本并判定是否可升级，
-校验并移除无当前架构 .deb 包的目录条目，将结果写入本地快照文件
-(~/.cache/ghdeb/snapshot.json)。
+校验并移除无当前架构 .deb 包的目录条目，将结果写入单一系统级缓存文件
+(/var/cache/ghdeb/cache.json)。与
+.B apt update
+类似，需要写入 root 所有的系统缓存，可能提示输入
+.BR sudo
+密码。
 之后
 .B ghdeb list
 只读取该快照，不再实时查询网络。
@@ -150,7 +154,7 @@ ghdeb \- 管理从 GitHub Releases 下载的 .deb 包
 .RB [ \-\-dry\-run ]
 .PP
 清理
-.B ~/.cache/ghdeb/
+.B /var/cache/ghdeb/
 中缓存的 .deb 文件。使用
 .B \-\-dry\-run
 可预览将被删除的文件而不实际删除。
@@ -206,10 +210,10 @@ i386@i386, x86, i686, 386
 .TE
 .SH 缓存
 .B ghdeb
-将 release 信息缓存在
-.B ~/.cache/ghdeb/releases.json
+将 release 版本、已装版本与 list 快照统一缓存在单个文件
+.B /var/cache/ghdeb/cache.json
 中，TTL 为 24 小时。下载的 .deb 文件缓存在
-.B ~/.cache/ghdeb/
+.B /var/cache/ghdeb/
 中。
 .SH 状态文件
 已管理包的记录存储在
@@ -230,10 +234,10 @@ GitHub 个人访问令牌。将 API 速率限制从 60 次/小时（未认证）
 .B /etc/ghdeb/catalog.toml
 系统包目录（内置 curated 的 GitHub .deb 包列表）。
 .TP
-.B ~/.cache/ghdeb/releases.json
-Release 版本缓存（24 小时 TTL）。
+.B /var/cache/ghdeb/cache.json
+统一缓存：GitHub release 版本、本地已装版本与 list 快照（24 小时 TTL）。
 .TP
-.B ~/.cache/ghdeb/*.deb
+.B /var/cache/ghdeb/*.deb
 已下载的 .deb 包缓存。
 .TP
 .B /var/cache/ghdeb/installed.json

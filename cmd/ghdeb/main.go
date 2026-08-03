@@ -1346,7 +1346,7 @@ func cmdClean(args []string) error {
 	removed := 0
 	for _, f := range files {
 		path := filepath.Join(cacheDir, f)
-		if err := os.Remove(path); err != nil {
+		if err := state.SudoRemove(path); err != nil {
 			fmt.Fprintf(os.Stderr, "⚠️  删除失败 %s: %v\n", f, err)
 		} else {
 			removed++
@@ -1545,7 +1545,7 @@ func cmdList(args []string) error {
 	entries := cat.AllEntries()
 
 	// 只读快照缓冲（由 ghdeb update 生成）
-	snap := state.LoadSnapshot()
+	snap := state.LoadCache()
 
 	names := cat.SortedNames()
 	if len(names) == 0 {
@@ -1773,7 +1773,7 @@ func cmdUpdate(args []string) error {
 	}
 
 	// 4) 组装并写回快照
-	snap := state.LoadSnapshot()
+	snap := state.LoadCache()
 	snap.UpdatedAt = time.Now().Format(time.RFC3339)
 
 	for _, name := range names {
@@ -1822,7 +1822,7 @@ func cmdUpdate(args []string) error {
 		snap.Set(name, sp)
 	}
 
-	if err := state.SaveSnapshot(snap); err != nil {
+	if err := state.SaveCache(snap); err != nil {
 		return fmt.Errorf("保存 list 快照失败: %w", err)
 	}
 
@@ -2032,18 +2032,31 @@ func fetchRelease(client *gh.Client, owner, repo, tag string) (*gh.Release, erro
 }
 
 func downloadAsset(client *gh.Client, asset gh.Asset) (string, error) {
-	cacheDir, err := getCacheDir()
+	// 先下载到用户可写的临时文件，再 sudo 移动到系统缓存目录
+	tmp, err := os.CreateTemp("", "ghdeb-*.deb")
 	if err != nil {
 		return "", err
 	}
-	destPath := filepath.Join(cacheDir, asset.Name)
+	tmpPath := tmp.Name()
+	tmp.Close()
+	defer os.Remove(tmpPath)
+
 	fmt.Printf(T("⬇️  多线程下载中 (%d 线程): %s\n", "⬇️  Parallel downloading (%d threads): %s\n"), 4, asset.BrowserDownloadURL)
-	err = client.DownloadAssetWithFallback(asset, destPath, func(downloaded, total int64) {
+	err = client.DownloadAssetWithFallback(asset, tmpPath, func(downloaded, total int64) {
 		printProgress(downloaded, total)
 	})
 	fmt.Println()
 	if err != nil {
 		return "", fmt.Errorf("下载失败: %w", err)
+	}
+
+	cacheDir, err := getCacheDir()
+	if err != nil {
+		return "", err
+	}
+	destPath := filepath.Join(cacheDir, asset.Name)
+	if err := state.SudoMove(tmpPath, destPath); err != nil {
+		return "", fmt.Errorf("移动到缓存目录失败: %w", err)
 	}
 	fmt.Printf(T("✅ 下载完成: %s\n", "✅ Download complete: %s\n"), destPath)
 	return destPath, nil
@@ -2074,17 +2087,12 @@ func installDeb(path string) error {
 }
 
 func getCacheDir() (string, error) {
-	dir := os.Getenv("XDG_CACHE_HOME")
-	if dir == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
+	// 系统级缓存目录：root 写，其他只读，便于所有用户共享监测
+	cacheDir := state.CacheDir()
+	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+		if err := state.SudoMkdirAll(cacheDir); err != nil {
 			return "", err
 		}
-		dir = filepath.Join(home, ".cache")
-	}
-	cacheDir := filepath.Join(dir, "ghdeb")
-	if err := os.MkdirAll(cacheDir, 0755); err != nil {
-		return "", err
 	}
 	return cacheDir, nil
 }

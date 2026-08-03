@@ -48,7 +48,11 @@ Similar to
 . Queries the latest version from GitHub and the locally installed version for
 each catalog entry, determines whether it is upgradeable, validates and removes
 catalog entries without a .deb package for the current architecture, and writes
-the results to a local snapshot (~/.cache/ghdeb/snapshot.json). After this,
+the results to a single system cache file (/var/cache/ghdeb/cache.json). Like
+.B apt update
+, this writes to the root-owned system cache and may prompt for
+.BR sudo .
+After this,
 .B ghdeb list
 reads only that snapshot and does not query the network.
 .SS list
@@ -157,7 +161,7 @@ The ghdeb management record is also removed.
 .RB [ \-\-dry\-run ]
 .PP
 Remove cached .deb files from
-.BR ~/.cache/ghdeb/ .
+.BR /var/cache/ghdeb/ .
 Use
 .B \-\-dry\-run
 to preview what would be deleted without actually removing files.
@@ -214,10 +218,11 @@ i386@i386, x86, i686, 386
 .TE
 .SH CACHE
 .B ghdeb
-caches release information in
-.B ~/.cache/ghdeb/releases.json
+caches release, installed-version and list-snapshot information in a single
+file
+.B /var/cache/ghdeb/cache.json
 with a 24-hour TTL. Downloaded .deb files are cached in
-.BR ~/.cache/ghdeb/ .
+.BR /var/cache/ghdeb/ .
 .SH STATE
 Managed package records are stored in
 .BR /var/cache/ghdeb/installed.json .
@@ -238,10 +243,11 @@ locales produce English output.
 .B /etc/ghdeb/catalog.toml
 System package catalog (curated list of known GitHub .deb packages).
 .TP
-.B ~/.cache/ghdeb/releases.json
-Release version cache (24h TTL).
+.B /var/cache/ghdeb/cache.json
+Unified cache: GitHub release versions, locally installed versions and list
+snapshot (24h TTL).
 .TP
-.B ~/.cache/ghdeb/*.deb
+.B /var/cache/ghdeb/*.deb
 Downloaded .deb package cache.
 .TP
 .B /var/cache/ghdeb/installed.json

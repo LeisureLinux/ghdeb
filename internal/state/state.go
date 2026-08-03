@@ -37,15 +37,15 @@ type HistoryEntry struct {
 // PackageRecord 一个仓库的完整状态
 type PackageRecord struct {
 	Owner          string         `json:"owner"`
-	PkgName        string         `json:"pkg_name,omitempty"`          // deb 包名（如 "bat"）
+	PkgName        string         `json:"pkg_name,omitempty"` // deb 包名（如 "bat"）
 	Repo           string         `json:"repo"`
-	CurrentVersion string         `json:"current_version"`                    // 最后一次 install/upgrade 的版本
-	SystemVersion  string         `json:"system_version,omitempty"`           // dpkg 实际版本（运行时查询）
-	InstalledPath  string         `json:"installed_path,omitempty"`           // dpkg 安装的关键路径
+	CurrentVersion string         `json:"current_version"`          // 最后一次 install/upgrade 的版本
+	SystemVersion  string         `json:"system_version,omitempty"` // dpkg 实际版本（运行时查询）
+	InstalledPath  string         `json:"installed_path,omitempty"` // dpkg 安装的关键路径
 	Arch           string         `json:"arch,omitempty"`
-	Removed        bool           `json:"removed"`                            // 是否已标记移除
+	Removed        bool           `json:"removed"` // 是否已标记移除
 	History        []HistoryEntry `json:"history"`
-	UpdatedAt      string         `json:"updated_at"`                         // 最后更新时间
+	UpdatedAt      string         `json:"updated_at"` // 最后更新时间
 }
 
 // State 管理所有包的状态
@@ -266,4 +266,23 @@ func (r *PackageRecord) RefreshSystemInfo(debPkgName string) {
 	if path := QueryInstalledPath(debPkgName); path != "" {
 		r.InstalledPath = path
 	}
+}
+
+// sudoRemove 用 sudo 删除文件
+func sudoRemove(path string) error {
+	cmd := exec.Command("sudo", "rm", "-f", path)
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+// sudoMove 用 sudo mv 移动文件到系统目录
+func sudoMove(src, dst string) error {
+	cmd := exec.Command("sudo", "mv", src, dst)
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+// SudoMove 导出 sudo mv
+func SudoMove(src, dst string) error {
+	return sudoMove(src, dst)
 }

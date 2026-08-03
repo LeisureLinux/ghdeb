@@ -24,7 +24,7 @@
 - **Non-interactive install**: Sets `DEBIAN_FRONTEND=noninteractive` to avoid debconf prompts.
 - **Shell autocompletion**: Built-in zsh, bash, and fish completion scripts.
 - **Bilingual output**: Chinese and English, selected by system locale.
-- **XDG-compliant**: Cache in `~/.cache/ghdeb/` (XDG_CACHE_HOME), config in `~/.config/ghdeb/` (XDG_CONFIG_HOME).
+- **System cache**: Cache in `/var/cache/ghdeb/` (root-owned), config in `/etc/ghdeb/`.
 
 ## Typical Workflows
 
@@ -53,8 +53,8 @@ ghdeb list
 
 - Written in Go, single binary, no runtime dependencies.
 - Uses GitHub REST API (unauthenticated: 60 req/hr, with GITHUB_TOKEN: 5000 req/hr).
-- Release metadata cached for 24 hours in `~/.cache/ghdeb/releases.json`.
-- List snapshot cached in `~/.cache/ghdeb/snapshot.json` (written by `ghdeb update`, read by `ghdeb list`).
+- Unified cache (release versions, installed versions, list snapshot) stored in a single file `/var/cache/ghdeb/cache.json` (24h TTL).
+- `ghdeb update` writes the cache; `ghdeb list` reads only it without network (like `apt update`).
 - Package state tracked in `/var/cache/ghdeb/installed.json`.
 
 ## How it differs from alternatives
