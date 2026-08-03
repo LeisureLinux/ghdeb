@@ -178,6 +178,22 @@ ghdeb intelligently matches release assets to your system architecture:
 
 It prefers standard packages and skips musl/static/portable variants.
 
+### x86-64 microarchitecture variants (v2/v3/v4)
+
+Some projects (e.g. `daeuniverse/dae`) publish multiple `.deb` files targeting
+different x86-64 CPU microarchitecture levels, named like
+`dae-linux-x86_64_v3_avx2.deb`. ghdeb inspects `/proc/cpuinfo` to detect the
+highest x86-64 microarchitecture level your CPU supports (v1/v2/v3/v4 per the
+x86-psABI levels) and automatically picks the best-matching variant:
+
+- **v1** — baseline x86-64
+- **v2** — SSE4.2 / POPCNT / CX16 / LAHF-LM
+- **v3** — AVX2 / BMI1 / BMI2 / FMA / F16C / MOVBE
+- **v4** — AVX-512 (AVX512F/BW/CD/DQ/VL)
+
+A level-N CPU will prefer a `_vN_` asset it can run, falling back to the plain
+`x86_64` package when no matching variant exists.
+
 ## How to configure a proxy for GitHub downloads?
 
 ```bash

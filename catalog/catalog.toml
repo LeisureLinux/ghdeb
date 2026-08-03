@@ -69,6 +69,12 @@ pretty_name = "cosign"
 website = "https://github.com/sigstore/cosign"
 summary = "Container Signing, Verification and Storage in an OCI registry"
 
+[dae]
+repo = "daeuniverse/dae"
+pretty_name = "dae"
+website = "https://github.com/daeuniverse/dae"
+summary = "A Linux high-performance transparent proxy solution based on eBPF"
+
 [dive]
 repo = "wagoodman/dive"
 pretty_name = "dive"

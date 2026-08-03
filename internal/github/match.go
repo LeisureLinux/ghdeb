@@ -131,8 +131,27 @@ func FindAssetWithFallback(release *Release, arch *deb.ArchInfo) (*MatchResult, 
 	return result, nil
 }
 
-// selectBestAsset 从多个匹配的 assets 中选择最佳的一个（优先标准包）
+// selectBestAsset 从多个匹配的 assets 中选择最佳的一个
+// 优先标准包；x86_64 时优先选择与当前 CPU 指令集匹配的微架构变体
 func selectBestAsset(assets []Asset, arch *deb.ArchInfo) *Asset {
+	// x86_64：优先选微架构变体（v2/v3/v4），取当前 CPU 支持的最高级别
+	if arch.DpkgArch == "amd64" {
+		if cpuLevel := deb.DetectX86MicroArch(); cpuLevel >= 2 {
+			bestLevel := 0
+			var best *Asset
+			for i := range assets {
+				lvl := deb.AssetMicroArch(assets[i].Name)
+				if lvl > 0 && lvl <= cpuLevel && lvl > bestLevel {
+					bestLevel = lvl
+					best = &assets[i]
+				}
+			}
+			if best != nil {
+				return best
+			}
+		}
+	}
+
 	var standard, variant []Asset
 	for _, a := range assets {
 		if isVariant(a.Name) {
