@@ -1,46 +1,47 @@
 # ghdeb
 
-> ghdeb is a lightweight CLI tool that installs and upgrades .deb packages directly from GitHub Releases on Debian/Ubuntu systems. It eliminates manual download-find-install cycles for packages distributed outside apt repositories.
+> ghdeb is a lightweight CLI that installs and upgrades .deb packages directly from GitHub Releases on Debian/Ubuntu systems. It automates the entire find-download-install cycle for software distributed outside apt repositories, and keeps an up-to-date local snapshot so `list`/`upgrade` work offline.
 
 ## Core Commands
 
-- `ghdeb install <owner/repo>[@tag]`: Install or upgrade a package from GitHub Releases. Auto-detects architecture and selects the matching .deb asset.
-- `ghdeb update [--verbose]`: Refresh version info like `apt update` — query latest version from GitHub, check locally installed version, determine upgradeability, and prune catalog entries without a matching-arch `.deb`. Each fetch also validates the `.deb` asset in the same request (no second network round). Writes results to a local snapshot. `--verbose` prints per-package check details.
-- `ghdeb upgrade [owner/repo]`: Upgrade all managed packages, or a specific one.
-- `ghdeb list [--json]`: List all catalog entries, reading only the local snapshot produced by `ghdeb update` (no network).
-- `ghdeb info <owner/repo or pkgname>`: Show latest release information without installing.
-- `ghdeb history <owner/repo>`: Show full operation history for a package.
-- `ghdeb catalog modify <pkgname> --repo <owner/repo>`: Repoint an existing catalog entry to a different GitHub repository.
-- `ghdeb catalog validate [name] [--all]`: Validate catalog entries, removing any without a matching-arch `.deb`.
+- `ghdeb install <owner/repo>[@tag]` or `ghdeb install <shortname>`: Install or upgrade a package from GitHub Releases. Auto-detects the system architecture and selects the matching `.deb` asset. Installing by `owner/repo` on the command line also auto-adds the repo to the system catalog (short name = repo, or `owner-repo` on conflict) and updates the cache snapshot immediately.
+- `ghdeb upgrade [owner/repo]`: Upgrade all managed packages (or one). Before upgrading it auto-scans for orphan packages, and after each upgrade it refreshes the cache snapshot so later `list`/`upgrade` reflect the new versions.
+- `ghdeb update [--verbose]`: Refresh version info like `apt update` — query the latest version from GitHub, check the locally installed version, determine upgradeability, and prune catalog entries that have no `.deb` for the current architecture. Validates the `.deb` asset in the same request (no second network round). Writes the unified snapshot to `/var/cache/ghdeb/cache.json`.
+- `ghdeb list [--json]` (alias `ls`): List all catalog entries, reading only the local snapshot produced by `ghdeb update` (no network). Flags installed vs. latest versions; marks entries as upgradeable.
+- `ghdeb show <owner/repo|pkgname>` (alias `info`): Show the latest release information for a package, including the matched `.deb` asset for the current architecture. Does not install.
+- `ghdeb search <pattern>`: Search the catalog by name, pretty name, or summary (supports regex).
+- `ghdeb reinstall <pkg>`: Force reinstall by downloading and installing the latest release again; marks the history entry as a reinstall.
+- `ghdeb purge <pkg>`: Uninstall via `apt-get purge`, clean up with `autoremove`, and remove the ghdeb management record.
+- `ghdeb clean [--dry-run]`: Remove cached `.deb` files from `/var/cache/ghdeb/`.
+- `ghdeb history <owner/repo>`: Show the full operation history (install/upgrade/purge) for a package.
+- `ghdeb version`: Print the version.
+- `ghdeb catalog <subcommand>`: Manage the catalog — `add`, `delete`/`del`/`rm`, `modify`, `validate [--all]`, `show`, `search`.
 
 ## Key Features
 
-- **Zero configuration**: Works out of the box. No config files, no JSON, no YAML required.
-- **Architecture auto-detection**: Uses `dpkg --print-architecture` and matches release assets by filename patterns (amd64/x86_64/x64, arm64/aarch64, etc.).
-- **Smart asset selection**: Prefers standard .deb packages, skips musl/static/portable variants.
-- **Orphan package management**: Detects .deb packages installed without apt sources — a common gap in Debian/Ubuntu systems.
-- **Download resilience**: 3 retries with exponential backoff, resume downloads, HTTP 416 handling.
-- **Proxy support**: Respects `https_proxy`/`http_proxy` environment variables and `~/.config/ghdeb/config.json`.
+- **Zero configuration**: Works out of the box; no config files required.
+- **Multi-architecture support**: Auto-detects via `dpkg --print-architecture` and cross-compiles for 5 architectures — amd64, arm64, armhf, loong64 (loongarch64), riscv64. Matches release assets by filename patterns.
+- **Smart asset selection**: Prefers standard `.deb` packages, skips musl/static/portable variants.
+- **Automatic catalog population**: A direct `install owner/repo` that succeeds auto-registers the repo in `/etc/ghdeb/catalog.toml`, so short-name installs/upgrades work afterwards.
+- **Unified cache snapshot**: `install`/`upgrade`/`update` all refresh `/var/cache/ghdeb/cache.json` (24h TTL); `list`/`upgrade` read only that snapshot and stay offline.
+- **Orphan package detection**: Before upgrading, scans for `.deb` packages installed without an apt source — a common gap in Debian/Ubuntu systems.
+- **Download resilience**: 3 retries with exponential backoff, resume support, HTTP 416 handling.
+- **Proxy support**: Respects `https_proxy`/`http_proxy` and `~/.config/ghdeb/config.json`.
 - **Non-interactive install**: Sets `DEBIAN_FRONTEND=noninteractive` to avoid debconf prompts.
 - **Shell autocompletion**: Built-in zsh, bash, and fish completion scripts.
 - **Bilingual output**: Chinese and English, selected by system locale.
-- **System cache**: Cache in `/var/cache/ghdeb/` (root-owned), config in `/etc/ghdeb/`.
 
 ## Typical Workflows
 
-### Install a tool from GitHub
+### Install a tool from GitHub (auto-adds to catalog)
 ```
 ghdeb install rustdesk/rustdesk
+ghdeb list
 ```
 
-### Upgrade everything
+### Short-name install after it was registered
 ```
-ghdeb upgrade
-```
-
-### Find unmanaged packages
-```
-ghdeb scan --deep
+ghdeb install rustdesk
 ```
 
 ### Refresh version info, then list what's installed
@@ -49,20 +50,32 @@ ghdeb update
 ghdeb list
 ```
 
+### Upgrade everything (also refreshes the cache)
+```
+ghdeb upgrade
+```
+
+### Install a direct catalog/URL-based package
+```
+ghdeb catalog add myapp --repo user/myapp
+ghdeb install myapp
+```
+
 ## Architecture
 
-- Written in Go, single binary, no runtime dependencies.
-- Uses GitHub REST API (unauthenticated: 60 req/hr, with GITHUB_TOKEN: 5000 req/hr).
+- Written in Go, single binary, no runtime dependencies; cross-compiled for amd64, arm64, armhf, loong64, riscv64.
+- Uses the GitHub REST API (unauthenticated 60 req/hr; with `GITHUB_TOKEN`/`GH_TOKEN` up to 5000 req/hr).
+- Catalog in `/etc/ghdeb/catalog.toml` (curated, shipped with the package).
 - Unified flattened cache `/var/cache/ghdeb/cache.json` (24h TTL): one record per catalog package (installed state, installed/latest version, upgradeable).
-- `ghdeb update` writes the cache; `ghdeb list` reads only it without network (like `apt update`).
-- Package state tracked in `/var/cache/ghdeb/installed.json`.
+- `ghdeb update`/`install`/`upgrade` write the cache; `ghdeb list` reads only it without network (like `apt update`).
+- Managed package state tracked in `/var/cache/ghdeb/history.json`.
 
 ## How it differs from alternatives
 
 - vs `apt`: ghdeb manages packages NOT in any apt repository (GitHub Releases only).
 - vs manual `wget` + `dpkg -i`: ghdeb automates the entire find-download-install cycle.
 - vs github-apt-repos / inapt: ghdeb is a client-side tool, no server infrastructure needed.
-- vs gitdeb: ghdeb is a compiled Go binary with architecture detection, retry logic, and state management.
+- vs gitdeb: ghdeb is a compiled Go binary with multi-arch support, retry logic, and state management.
 
 ## Repository
 
