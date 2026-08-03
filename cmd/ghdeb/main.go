@@ -290,6 +290,18 @@ func cmdInstall(args []string) error {
 		return fmt.Errorf("保存状态失败: %w", err)
 	}
 
+	// 命令行直接安装（非目录短名称）时，若该仓库尚未收录且存在合理 .deb，
+	// 自动将其加入系统目录 catalog.toml（安装校验已确认有当前架构的 .deb 资产）
+	catalogShortName := catalogName
+	if catalogShortName == "" {
+		catalogShortName = ensureCatalogAfterInstall(owner, repo, repoKey)
+	}
+
+	// 安装成功后更新统一缓存快照（list/upgrade 依赖 cache.json）
+	if err := updateCacheAfterInstall(catalogShortName, repoKey, release, asset, arch.DpkgArch); err != nil {
+		return fmt.Errorf("更新缓存失败: %w", err)
+	}
+
 	// 显示安装结果
 	slug := repoKey
 	if catalogName != "" {
@@ -298,6 +310,68 @@ func cmdInstall(args []string) error {
 	fmt.Printf(T("🎉 安装完成: %s\n", "🎉 Install complete: %s\n"), slug)
 	fmt.Printf(T("   OS package name: %s\n", "   OS package name: %s\n"), pkgName)
 	return nil
+}
+
+// ensureCatalogAfterInstall 命令行直接安装 owner/repo 成功后，将仓库自动加入系统目录。
+// 返回最终使用的 catalog 短名称；若无法加入（重名冲突等）则返回空字符串。
+func ensureCatalogAfterInstall(owner, repo, repoKey string) string {
+	path := catalog.SystemCatalogPath()
+	entries := make(map[string]catalog.CatalogEntry)
+	if data, err := os.ReadFile(path); err == nil {
+		toml.Decode(string(data), &entries)
+	}
+
+	// 仓库已在目录中（无论短名是否与 repo 同名）→ 无需重复加入
+	for name, e := range entries {
+		if e.Repo == repoKey {
+			return name
+		}
+	}
+
+	// 候选短名：优先 repo 名，冲突（被其他仓库占用）时回退为 owner-repo
+	candidates := []string{strings.ToLower(repo), strings.ToLower(owner) + "-" + strings.ToLower(repo)}
+	for _, cand := range candidates {
+		if catalog.ValidateCatalogName(cand) != nil {
+			continue
+		}
+		if _, exists := entries[cand]; exists {
+			continue // 该短名已被其他仓库占用，尝试下一候选
+		}
+		entry := &catalog.CatalogEntry{
+			Repo:       repoKey,
+			PrettyName: repo,
+			Website:    fmt.Sprintf("https://github.com/%s", repoKey),
+			Summary:    T("从 GitHub Releases 安装的软件包", "Package installed from GitHub Releases"),
+		}
+		if err := addToSystemCatalog(cand, entry); err != nil {
+			fmt.Fprintf(os.Stderr, "⚠️  %s %s: %v\n", T("自动加入目录失败", "Failed to auto-add to catalog"), cand, err)
+			return ""
+		}
+		fmt.Printf(T("📝 已自动加入目录: %s → %s\n", "📝 Auto-added to catalog: %s → %s\n"), cand, repoKey)
+		return cand
+	}
+	return ""
+}
+
+// updateCacheAfterInstall 安装成功后更新统一缓存快照，使 list/upgrade 立即反映最新状态。
+func updateCacheAfterInstall(shortName, repoKey string, release *gh.Release, asset *gh.Asset, arch string) error {
+	if shortName == "" {
+		return nil
+	}
+	snap := state.LoadCache()
+	snap.Set(shortName, &state.PkgState{
+		Name:             shortName,
+		Installed:        true,
+		InstallTime:      time.Now().Format(time.RFC3339),
+		InstalledVersion: release.TagName,
+		Repo:             repoKey,
+		GitHubVersion:    release.TagName,
+		Upgradable:       false,
+		Arch:             arch,
+		PkgFile:          asset.Name,
+	})
+	snap.UpdatedAt = time.Now().Format(time.RFC3339)
+	return state.SaveCache(snap)
 }
 
 // --- upgrade ---

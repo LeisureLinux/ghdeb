@@ -3,36 +3,61 @@ set -e
 
 VERSION="0.7.47"
 
-# 支持的架构映射: go arch -> dpkg arch
-declare -A ARCH_MAP=(
-    ["amd64"]="amd64"
-    # 以下架构暂未稳定，先注释，待后续稳定后再加回
-    # ["arm64"]="arm64"
-    # ["loong64"]="loong64"
-    # ["riscv64"]="riscv64"
+# 架构规格表: 别名(参数) -> "GOARCH|GOARM|dpkg架构"
+#   GOOS 固定为 linux。
+#   armhf 由 Go 的 GOARCH=arm + GOARM=7 交叉编译而来。
+#   可同时接受 go 架构名与 dpkg/发行版常用名（如 loongarch64 别名）。
+declare -A ARCH_SPEC=(
+    [amd64]="amd64||amd64"
+    [x86_64]="amd64||amd64"
+    [arm64]="arm64||arm64"
+    [aarch64]="arm64||arm64"
+    [armhf]="arm|7|armhf"
+    [armv7]="arm|7|armhf"
+    [arm]="arm|7|armhf"
+    [loong64]="loong64||loong64"
+    [loongarch64]="loong64||loong64"
+    [riscv64]="riscv64||riscv64"
 )
 
-# 默认构建当前架构
-TARGET_GOARCH="${1:-$(go env GOARCH)}"
-TARGET_ARCH="${ARCH_MAP[$TARGET_GOARCH]}"
+# 默认构建当前架构（go env GOARCH → 规范化到 ARCH_SPEC 的 key）
+DEFAULT_GOARCH="$(go env GOARCH)"
+case "$DEFAULT_GOARCH" in
+    arm) DEFAULT_KEY="armhf" ;;
+    *)   DEFAULT_KEY="$DEFAULT_GOARCH" ;;
+esac
 
-if [[ -z "$TARGET_ARCH" ]]; then
-    echo "❌ 不支持的架构: $TARGET_GOARCH"
-    echo "   支持的架构: ${!ARCH_MAP[*]}"
+TARGET_KEY="${1:-$DEFAULT_KEY}"
+SPEC="${ARCH_SPEC[$TARGET_KEY]}"
+
+if [[ -z "$SPEC" ]]; then
+    echo "❌ 不支持的架构: $TARGET_KEY"
+    echo "   支持的架构: ${!ARCH_SPEC[*]}"
     exit 1
 fi
+
+# 解析 GOARCH|GOARM|dpkg 三段
+GOARCH="${SPEC%%|*}"
+REST="${SPEC#*|}"
+GOARM="${REST%%|*}"
+TARGET_ARCH="${REST#*|}"
 
 PKG_NAME="ghdeb_${VERSION}_${TARGET_ARCH}"
 PKG_DIR="dist/${PKG_NAME}"
 
-echo "🔨 构建 ghdeb .deb 包 [${TARGET_ARCH}]..."
+echo "🔨 构建 ghdeb .deb 包 [${TARGET_ARCH}] (GOARCH=${GOARCH}${GOARM:+ GOARM=${GOARM}})..."
 
 # 清理旧的构建
-rm -rf "dist/${PKG_NAME}"*
+rm -rf "dist/${PKG_NAME}"
 
-# 交叉编译二进制
-echo "📦 编译二进制文件 (GOOS=linux GOARCH=${TARGET_GOARCH})..."
-GOOS=linux GOARCH="${TARGET_GOARCH}" go build -ldflags="-s -w -X main.version=${VERSION}" -o dist/ghdeb ./cmd/ghdeb/
+# 交叉编译二进制（GOARM 仅 arm 需要）
+echo "📦 编译二进制文件 (GOOS=linux GOARCH=${GOARCH}${GOARM:+ GOARM=${GOARM}})..."
+ENV_GOARM=()
+if [[ -n "$GOARM" ]]; then
+    ENV_GOARM=(GOARM="$GOARM")
+fi
+env GOOS=linux GOARCH="$GOARCH" "${ENV_GOARM[@]}" \
+    go build -ldflags="-s -w -X main.version=${VERSION}" -o dist/ghdeb ./cmd/ghdeb/
 
 # 创建包目录结构
 echo "📁 创建包目录结构..."
@@ -80,7 +105,7 @@ chmod 755 ${PKG_DIR}/usr/share/ghdeb/hooks/remove-monitor.sh
 cp debian/hooks_template/refresh-installed-cache.sh ${PKG_DIR}/usr/share/ghdeb/hooks/refresh-installed-cache.sh
 chmod 755 ${PKG_DIR}/usr/share/ghdeb/hooks/refresh-installed-cache.sh
 
-# 生成控制文件（替换 Architecture 字段）
+# 生成控制文件（替换 Version 与 Architecture 字段）
 sed -e "s/^Version:.*/Version: ${VERSION}/" -e "s/^Architecture:.*/Architecture: ${TARGET_ARCH}/" debian/control > ${PKG_DIR}/DEBIAN/control
 
 # 复制 postinst/prerm/postrm 并设置权限

@@ -41,6 +41,16 @@ func archInfoFor(dpkgArch string) *ArchInfo {
 			DpkgArch: "armhf",
 			Aliases:  []string{"armhf", "armv7l", "armv7", "arm"},
 		}
+	case "loong64":
+		return &ArchInfo{
+			DpkgArch: "loong64",
+			Aliases:  []string{"loong64", "loongarch64", "loongarch"},
+		}
+	case "riscv64":
+		return &ArchInfo{
+			DpkgArch: "riscv64",
+			Aliases:  []string{"riscv64", "riscv"},
+		}
 	case "i386":
 		return &ArchInfo{
 			DpkgArch: "i386",
