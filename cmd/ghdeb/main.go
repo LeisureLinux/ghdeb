@@ -350,12 +350,18 @@ func cmdUpgrade(args []string) error {
 			}
 		}
 	} else {
-		// 无参数：直接按当前 catalog 清单驱动，仅收集已装且未移除的条目
+		// 无参数：按 cache.json 快照驱动，仅收集「已安装且可升级」的条目
+		// （update 已扫描 OS 已装状态与 GitHub 最新版本，不必再依赖 history 管理记录）
+		snap := state.LoadCache()
 		cat, catErr := catalog.Load()
 		if catErr != nil {
 			return fmt.Errorf("加载目录失败: %w", catErr)
 		}
-		for _, name := range cat.SortedNames() {
+		for _, name := range snap.SortedNames() {
+			sp := snap.Get(name)
+			if sp == nil || !sp.Installed || !sp.Upgradable {
+				continue
+			}
 			entry := cat.Lookup(name)
 			if entry == nil || entry.Repo == "" {
 				continue
@@ -364,23 +370,17 @@ func cmdUpgrade(args []string) error {
 			if perr != nil {
 				continue
 			}
-			rec := st.Get(owner + "/" + repo)
-			if rec == nil || rec.Removed {
-				continue // 未在管理或已移除，跳过
-			}
-			pkgName := rec.PkgName
-			if pkgName == "" {
-				pkgName = rec.Repo
-			}
-			if !deb.IsPackageInstalled(pkgName) {
-				continue // 实际未安装，跳过（不重新安装）
+			repoKey := owner + "/" + repo
+			rec := st.Get(repoKey)
+			if rec != nil && rec.Removed {
+				continue
 			}
 			targets = append(targets, upgradeTarget{owner: owner, repo: repo, pkg: rec})
 		}
 	}
 
 	if len(targets) == 0 {
-		fmt.Println(T("没有已管理的包需要升级", "No managed packages to upgrade"))
+		fmt.Println(T("没有可升级的包", "No packages to upgrade"))
 		return nil
 	}
 
@@ -573,8 +573,8 @@ func cmdSearch(args []string) error {
 		return results[i].Name < results[j].Name
 	})
 
-	// 加载 state 检查安装状态
-	st, _ := state.Load()
+	// 加载 cache 快照检查安装状态（不依赖 history 管理记录）
+	snap := state.LoadCache()
 
 	fmt.Printf(T("找到 %d 个匹配的包:\n", "Found %d matching packages:\n"), len(results))
 	fmt.Printf("%-20s %-30s %s\n", T("名称", "Name"), T("仓库", "Repo"), T("简介", "Summary"))
@@ -584,11 +584,8 @@ func cmdSearch(args []string) error {
 		entry := r.Entry
 		repoKey := entry.Repo
 		installed := false
-		if st != nil {
-			rec := st.Get(repoKey)
-			if rec != nil && !rec.Removed {
-				installed = true
-			}
+		if sp := snap.Get(r.Name); sp != nil {
+			installed = sp.Installed
 		}
 		status := ""
 		if installed {
@@ -723,7 +720,7 @@ func cmdShow(args []string) error {
 		}
 	}
 
-	// 安装状态
+	// 安装状态：优先 history 管理记录；无管理记录（如 apt 安装的包）则回退 cache.json 快照
 	if rec != nil {
 		if !jsonOutput {
 			fmt.Println(strings.Repeat("─", 50))
@@ -760,6 +757,42 @@ func cmdShow(args []string) error {
 			info.DebName = rec.PkgName
 			if !jsonOutput {
 				fmt.Printf(T("deb 包名: %s\n", "Deb name:    %s\n"), rec.PkgName)
+			}
+		}
+	} else {
+		// 无管理记录：回退 cache.json 快照（ghdeb update 已扫描 OS 已装状态）
+		if sp := state.LoadCache().Get(catName); sp != nil {
+			if !jsonOutput {
+				fmt.Println(strings.Repeat("─", 50))
+			}
+			if sp.Installed {
+				info.Status = "installed"
+				if !jsonOutput {
+					fmt.Printf(T("状态:     ✅ 已安装\n", "Status:      ✅ installed\n"))
+				}
+			} else {
+				info.Status = "not-installed"
+				if !jsonOutput {
+					fmt.Printf(T("状态:     ⬜ 未安装\n", "Status:      ⬜ not installed\n"))
+				}
+			}
+			if sp.InstalledVersion != "" {
+				info.SystemVer = sp.InstalledVersion
+				if !jsonOutput {
+					fmt.Printf(T("系统版本: %s\n", "System:      %s\n"), sp.InstalledVersion)
+				}
+			}
+			if sp.Arch != "" {
+				info.Arch = sp.Arch
+				if !jsonOutput {
+					fmt.Printf(T("架构:     %s\n", "Arch:        %s\n"), sp.Arch)
+				}
+			}
+			if sp.PkgFile != "" {
+				info.DebName = sp.PkgFile
+				if !jsonOutput {
+					fmt.Printf(T("deb 包名: %s\n", "Deb name:    %s\n"), sp.PkgFile)
+				}
 			}
 		}
 	}
@@ -1366,24 +1399,57 @@ func cmdPurge(args []string) error {
 		return fmt.Errorf("请指定包名，如: ghdeb purge bat")
 	}
 
-	owner, repo, err := resolvePkgArg(args[0])
+	arg := args[0]
+
+	// 解析：优先 owner/repo，其次 catalog 短名
+	cat, _ := catalog.Load()
+	shortName := ""
+	if cat != nil && cat.Lookup(arg) != nil {
+		shortName = arg
+	}
+	owner, repo, err := resolvePkgArg(arg)
 	if err != nil {
 		return err
 	}
 	repoKey := owner + "/" + repo
-
-	st, err := state.Load()
-	if err != nil {
-		return err
+	// 若传入的是 owner/repo 而非短名，反查 catalog 短名作为 cache 键
+	if shortName == "" && cat != nil {
+		for cn, ce := range cat.AllEntries() {
+			if ce.Repo == repoKey {
+				shortName = cn
+				break
+			}
+		}
 	}
-	rec := st.Get(repoKey)
-	if rec == nil {
-		return fmt.Errorf("未找到 %s 的管理记录", repoKey)
+	if shortName == "" {
+		shortName = repo // 以 repo 尾段作为候选短名
 	}
 
-	// 获取 deb 包名
-	pkgName := rec.PkgName
+	// 从 dpkg 系统状态反查实际已装包名（不依赖 history.json 管理记录）
+	installed := deb.ScanInstalledDpkg()
+	var pkgName string
+	if installed != nil {
+		for _, cand := range deb.CandidatePkgNames(shortName, repoKey) {
+			if installed[cand] != nil {
+				pkgName = cand
+				break
+			}
+		}
+	}
+
 	if pkgName == "" {
+		// 回退：history 管理记录里记录的包名
+		if st, lerr := state.Load(); lerr == nil {
+			if rec := st.Get(repoKey); rec != nil {
+				if rec.PkgName != "" {
+					pkgName = rec.PkgName
+				}
+			}
+		}
+	}
+
+	if pkgName == "" {
+		// 未知包名：尝试用 repo 尾段
 		pkgName = repo
 	}
 
@@ -1408,10 +1474,22 @@ func cmdPurge(args []string) error {
 		_ = autoCmd.Run() // autoremove 失败不阻塞
 	}
 
-	// 标记移除
-	st.MarkRemoved(repoKey)
-	if err := st.Save(); err != nil {
-		return fmt.Errorf("保存状态失败: %w", err)
+	// 同步 history.json：存在管理记录则标记移除
+	if st, lerr := state.Load(); lerr == nil {
+		if rec := st.Get(repoKey); rec != nil {
+			st.MarkRemoved(repoKey)
+			_ = st.Save()
+		}
+	}
+
+	// 同步 cache.json：将已装状态置为未装
+	snap := state.LoadCache()
+	if sp := snap.Get(shortName); sp != nil {
+		sp.Installed = false
+		sp.InstallTime = ""
+		sp.InstalledVersion = ""
+		sp.Upgradable = false
+		_ = state.SaveCache(snap)
 	}
 
 	fmt.Printf(T("✅ 已卸载并清除 %s\n", "✅ Purged %s\n"), repoKey)
