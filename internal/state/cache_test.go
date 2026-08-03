@@ -2,29 +2,26 @@ package state
 
 import (
 	"os"
-	"path/filepath"
 	"testing"
 	"time"
 )
 
-// TestUnifiedCache 验证统一缓存的读写与合并行为
-func TestUnifiedCache(t *testing.T) {
+// TestFlatCache 验证扁平化统一缓存的读写与分段清理行为
+func TestFlatCache(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("GHDEB_CACHE_DIR", dir)
 	if got := CacheDir(); got != dir {
 		t.Fatalf("CacheDir=%q want %q", got, dir)
 	}
 
-	// 写入 release 与 installed
-	SetCachedRelease("owner", "repo", "v1.0.0")
-	SetCachedInstalled("mypkg", "1.2.3")
-
-	// 写入快照
+	// 写入一个扁平 package 记录
 	c := LoadCache()
 	c.UpdatedAt = time.Now().Format(time.RFC3339)
-	c.Set("mypkg", &SnapshotPkg{
-		Repo: "owner/repo", Installed: true,
-		InstalledVersion: "1.2.3", LatestVersion: "v1.0.0", Upgradeable: true,
+	c.Set("bat", &PkgState{
+		Name: "bat", Repo: "sharkdp/bat", Installed: true,
+		InstallTime: time.Now().Format(time.RFC3339),
+		InstalledVersion: "0.24.0", GitHubVersion: "0.24.0",
+		Upgradable: false, Arch: "amd64", PkgFile: "bat_0.24.0_amd64.deb",
 	})
 	if err := SaveCache(c); err != nil {
 		t.Fatalf("SaveCache: %v", err)
@@ -36,30 +33,41 @@ func TestUnifiedCache(t *testing.T) {
 		t.Fatalf("expected 1 json file, got %d: %v", len(files), files)
 	}
 
-	// 重新加载校验三段数据都在同一文件
+	// 重新加载校验字段都在同一文件
 	c2 := LoadCache()
-	if v := c2.Get("mypkg"); v == nil || !v.Upgradeable || v.LatestVersion != "v1.0.0" {
-		t.Fatalf("snapshot mismatch: %+v", v)
+	if v := c2.Get("bat"); v == nil || !v.Installed || v.GitHubVersion != "0.24.0" || v.Arch != "amd64" {
+		t.Fatalf("package mismatch: %+v", v)
 	}
-	if v := GetCachedRelease("owner", "repo"); v != "v1.0.0" {
+	// 按 owner/repo 反查 github 版本
+	if v := GetCachedRelease("sharkdp", "bat"); v != "0.24.0" {
 		t.Fatalf("release mismatch: %q", v)
 	}
-	if v := GetCachedInstalled("mypkg"); v != "1.2.3" {
-		t.Fatalf("installed mismatch: %q", v)
+
+	// 更新 github 版本并验证
+	SetCachedRelease("sharkdp", "bat", "0.25.0")
+	if v := GetCachedRelease("sharkdp", "bat"); v != "0.25.0" {
+		t.Fatalf("release after set mismatch: %q", v)
 	}
 
-	// 清空已装版本
-	ClearCachedInstalled()
-	if v := GetCachedInstalled("mypkg"); v != "" {
-		t.Fatalf("installed should be cleared, got %q", v)
+	// 清空已装状态：只清 installed/install_time/installed_version/upgradable
+	ClearInstalled()
+	if v := c2.Get("bat"); v == nil {
+		t.Fatalf("package should survive")
 	}
-	// release 与快照不受影响（同一文件内部分段清理）
-	if v := GetCachedRelease("owner", "repo"); v != "v1.0.0" {
-		t.Fatalf("release should survive, got %q", v)
+	c3 := LoadCache()
+	v := c3.Get("bat")
+	if v.Installed || v.InstalledVersion != "" || v.Upgradable {
+		t.Fatalf("installed fields should be cleared: %+v", v)
 	}
-	if c2 = LoadCache(); c2.Get("mypkg") == nil {
-		t.Fatalf("snapshot should survive")
+	// repo/github_version/arch/pkg_file 保留
+	if v.Repo != "sharkdp/bat" || v.GitHubVersion != "0.25.0" || v.Arch != "amd64" || v.PkgFile == "" {
+		t.Fatalf("non-installed fields should survive: %+v", v)
 	}
 
-	_ = filepath.Join
+	// 清除指定仓库的 github 版本
+	InvalidateReleaseCache("sharkdp", "bat")
+	if v := GetCachedRelease("sharkdp", "bat"); v != "" {
+		t.Fatalf("github version should be cleared, got %q", v)
+	}
+	_ = os.Remove
 }

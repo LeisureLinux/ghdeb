@@ -1,6 +1,6 @@
 // Package state 统一缓存：单文件 /var/cache/ghdeb/cache.json
-// 同时承载 releases（GitHub 最新版本）、installed（已装版本）、
-// packages（ghdeb list 展示快照），避免散落多个 json。
+// 扁平化结构：仅一个 packages 段，从 catalog.toml 枚举，
+// 每条记录聚合该包的全部展示/查询信息（已装、版本、可升级等）。
 // ghdeb update 只读写这一个文件；apt 钩子也直接更新它。
 package state
 
@@ -29,55 +29,35 @@ func CachePath() string {
 	return filepath.Join(CacheDir(), "cache.json")
 }
 
-// ReleaseEntry 单条 GitHub release 缓存记录
-type ReleaseEntry struct {
-	TagName   string `json:"tag_name"`
-	FetchedAt string `json:"fetched_at"` // RFC3339
-}
-
-// InstalledEntry 单条已装版本缓存记录
-type InstalledEntry struct {
-	Version   string `json:"version"`
-	FetchedAt string `json:"fetched_at"` // RFC3339
-}
-
-// SnapshotPkg 单个包的 list 展示信息
-type SnapshotPkg struct {
-	Repo             string `json:"repo,omitempty"`
-	Installed        bool   `json:"installed"`
-	InstalledVersion string `json:"installed_version,omitempty"`
-	LatestVersion    string `json:"latest_version,omitempty"`
-	Upgradeable      bool   `json:"upgradeable"`
+// PkgState 单个目录包的完整展示信息（key = catalog 短名，从 catalog.toml 枚举）
+type PkgState struct {
+	Name             string `json:"name"`                        // catalog 短名
+	Installed        bool   `json:"installed"`                   // 系统是否已装
+	InstallTime      string `json:"install_time,omitempty"`      // 最近安装/升级时间
+	InstalledVersion string `json:"installed_version,omitempty"` // dpkg 实际已装版本
+	Repo             string `json:"repo"`                        // owner/reponame
+	GitHubVersion    string `json:"github_version,omitempty"`    // GitHub 最新 tag/版本
+	Upgradable       bool   `json:"upgradable"`                  // 是否可升级
+	Arch             string `json:"arch,omitempty"`              // 目标架构
+	PkgFile          string `json:"pkg_file,omitempty"`          // 已下载的 .deb 文件名
 }
 
 // Cache 统一缓存结构
 type Cache struct {
-	UpdatedAt string                     `json:"updated_at"` // RFC3339，快照时间
-	Releases  map[string]*ReleaseEntry   `json:"releases"`   // key = "owner/repo"
-	Installed map[string]*InstalledEntry `json:"installed"`  // key = deb 包名
-	Packages  map[string]*SnapshotPkg    `json:"packages"`   // key = catalog 短名称
+	UpdatedAt string               `json:"updated_at"` // RFC3339，快照生成时间
+	Packages  map[string]*PkgState `json:"packages"`   // key = catalog 短名
 }
 
 // LoadCache 从磁盘加载统一缓存
 func LoadCache() *Cache {
-	c := &Cache{
-		Releases:  make(map[string]*ReleaseEntry),
-		Installed: make(map[string]*InstalledEntry),
-		Packages:  make(map[string]*SnapshotPkg),
-	}
+	c := &Cache{Packages: make(map[string]*PkgState)}
 	data, err := os.ReadFile(CachePath())
 	if err != nil {
 		return c
 	}
 	_ = json.Unmarshal(data, c)
-	if c.Releases == nil {
-		c.Releases = make(map[string]*ReleaseEntry)
-	}
-	if c.Installed == nil {
-		c.Installed = make(map[string]*InstalledEntry)
-	}
 	if c.Packages == nil {
-		c.Packages = make(map[string]*SnapshotPkg)
+		c.Packages = make(map[string]*PkgState)
 	}
 	return c
 }
@@ -100,90 +80,6 @@ func SaveCache(c *Cache) error {
 	return nil
 }
 
-// --- GitHub release 缓存 ---
-
-// GetCachedRelease 从缓存获取最新版本号，未命中或过期返回空
-func GetCachedRelease(owner, repo string) string {
-	if owner == "" || repo == "" {
-		return ""
-	}
-	c := LoadCache()
-	entry, ok := c.Releases[owner+"/"+repo]
-	if !ok {
-		return ""
-	}
-	fetchedAt, err := time.Parse(time.RFC3339, entry.FetchedAt)
-	if err != nil || time.Since(fetchedAt) > cacheTTL {
-		return ""
-	}
-	return entry.TagName
-}
-
-// SetCachedRelease 将版本号写入缓存
-func SetCachedRelease(owner, repo, tagName string) {
-	if owner == "" || repo == "" {
-		return
-	}
-	c := LoadCache()
-	c.Releases[owner+"/"+repo] = &ReleaseEntry{
-		TagName:   tagName,
-		FetchedAt: time.Now().Format(time.RFC3339),
-	}
-	_ = SaveCache(c)
-}
-
-// InvalidateReleaseCache 清除指定仓库的缓存，空字符串表示清除全部
-func InvalidateReleaseCache(owner, repo string) {
-	c := LoadCache()
-	if owner == "" {
-		c.Releases = make(map[string]*ReleaseEntry)
-	} else {
-		delete(c.Releases, owner+"/"+repo)
-	}
-	_ = SaveCache(c)
-}
-
-// --- 已装版本缓存 ---
-
-// GetCachedInstalled 从缓存获取已装版本号，未命中或过期返回空
-func GetCachedInstalled(pkgName string) string {
-	if pkgName == "" {
-		return ""
-	}
-	c := LoadCache()
-	entry, ok := c.Installed[pkgName]
-	if !ok {
-		return ""
-	}
-	fetchedAt, err := time.Parse(time.RFC3339, entry.FetchedAt)
-	if err != nil || time.Since(fetchedAt) > cacheTTL {
-		return ""
-	}
-	return entry.Version
-}
-
-// SetCachedInstalled 将已装版本号写入缓存
-func SetCachedInstalled(pkgName, version string) {
-	if pkgName == "" {
-		return
-	}
-	c := LoadCache()
-	c.Installed[pkgName] = &InstalledEntry{
-		Version:   version,
-		FetchedAt: time.Now().Format(time.RFC3339),
-	}
-	_ = SaveCache(c)
-}
-
-// ClearCachedInstalled 清空全部已装版本缓存（apt 钩子在包变更后调用）
-func ClearCachedInstalled() {
-	c := LoadCache()
-	c.Installed = make(map[string]*InstalledEntry)
-	_ = SaveCache(c)
-}
-
-// --- list 快照 ---
-
 // SortedNames 返回快照中的排序名称列表
 func (c *Cache) SortedNames() []string {
 	names := make([]string, 0, len(c.Packages))
@@ -195,18 +91,98 @@ func (c *Cache) SortedNames() []string {
 }
 
 // Get 获取某个包的快照信息
-func (c *Cache) Get(name string) *SnapshotPkg {
+func (c *Cache) Get(name string) *PkgState {
 	return c.Packages[name]
 }
 
 // Set 写入某个包的快照信息
-func (c *Cache) Set(name string, pkg *SnapshotPkg) {
+func (c *Cache) Set(name string, pkg *PkgState) {
 	c.Packages[name] = pkg
 }
 
 // Remove 从快照删除某个包
 func (c *Cache) Remove(name string) {
 	delete(c.Packages, name)
+}
+
+// --- GitHub 最新版本缓存（按 owner/repo 反查 package） ---
+
+// findByName 从 owner/repo 反查对应的 PkgState
+func (c *Cache) findByName(owner, repo string) *PkgState {
+	key := owner + "/" + repo
+	for _, p := range c.Packages {
+		if p.Repo == key {
+			return p
+		}
+	}
+	return nil
+}
+
+// cacheFresh 判断快照是否在 24h TTL 内
+func (c *Cache) cacheFresh() bool {
+	if c.UpdatedAt == "" {
+		return false
+	}
+	t, err := time.Parse(time.RFC3339, c.UpdatedAt)
+	if err != nil {
+		return false
+	}
+	return time.Since(t) <= cacheTTL
+}
+
+// GetCachedRelease 从缓存获取最新版本号，未命中或过期返回空
+func GetCachedRelease(owner, repo string) string {
+	if owner == "" || repo == "" {
+		return ""
+	}
+	c := LoadCache()
+	if !c.cacheFresh() {
+		return ""
+	}
+	if p := c.findByName(owner, repo); p != nil {
+		return p.GitHubVersion
+	}
+	return ""
+}
+
+// SetCachedRelease 将版本号写入缓存
+func SetCachedRelease(owner, repo, tagName string) {
+	if owner == "" || repo == "" {
+		return
+	}
+	c := LoadCache()
+	if p := c.findByName(owner, repo); p != nil {
+		p.GitHubVersion = tagName
+		_ = SaveCache(c)
+	}
+}
+
+// InvalidateReleaseCache 清除指定仓库的缓存，空字符串表示清除全部
+func InvalidateReleaseCache(owner, repo string) {
+	c := LoadCache()
+	if owner == "" {
+		for _, p := range c.Packages {
+			p.GitHubVersion = ""
+		}
+	} else {
+		if p := c.findByName(owner, repo); p != nil {
+			p.GitHubVersion = ""
+		}
+	}
+	_ = SaveCache(c)
+}
+
+// ClearInstalled 清空各 package 的已装相关字段（apt 钩子在包变更后调用）
+// 保留 repo / github_version / arch / pkg_file，只清已装状态
+func ClearInstalled() {
+	c := LoadCache()
+	for _, p := range c.Packages {
+		p.Installed = false
+		p.InstallTime = ""
+		p.InstalledVersion = ""
+		p.Upgradable = false
+	}
+	_ = SaveCache(c)
 }
 
 // SudoMkdirAll 用 sudo 创建系统级缓存目录

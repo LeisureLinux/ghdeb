@@ -53,7 +53,7 @@ ghdeb list
 
 - Written in Go, single binary, no runtime dependencies.
 - Uses GitHub REST API (unauthenticated: 60 req/hr, with GITHUB_TOKEN: 5000 req/hr).
-- Unified cache (release versions, installed versions, list snapshot) stored in a single file `/var/cache/ghdeb/cache.json` (24h TTL).
+- Unified flattened cache `/var/cache/ghdeb/cache.json` (24h TTL): one record per catalog package (installed state, installed/latest version, upgradeable).
 - `ghdeb update` writes the cache; `ghdeb list` reads only it without network (like `apt update`).
 - Package state tracked in `/var/cache/ghdeb/installed.json`.
 

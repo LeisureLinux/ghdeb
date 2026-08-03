@@ -1,7 +1,7 @@
 #!/bin/bash
 # ghdeb dpkg hook: monitor package removal and update status automatically
 # This script is triggered by Dpkg::Post-Invoke in apt config
-# 同步维护 /var/cache/ghdeb/installed.json（状态）与 cache.json（统一缓存）
+# 同步维护 /var/cache/ghdeb/installed.json（状态历史）与 cache.json（统一缓存）
 
 # 容错：如果自身或必要文件不存在，静默退出
 [ -x /usr/share/ghdeb/hooks/remove-monitor.sh ] || exit 0
@@ -35,7 +35,7 @@ cache_file = "$CACHE_FILE"
 removed_names = [line.strip() for line in sys.stdin if line.strip()]
 
 try:
-    # 1) 更新状态文件：标记已移除
+    # 1) 更新状态文件：标记已移除（保留历史）
     with open(state_file, 'r') as f:
         state = json.load(f)
     packages = state.get('packages', {})
@@ -58,25 +58,24 @@ try:
         with open(state_file, 'w') as f:
             json.dump(state, f, indent=2, ensure_ascii=False)
 
-    # 2) 更新统一缓存：清空对应已装版本记录
+    # 2) 更新统一缓存：清空各 package 的已装状态（update 会精确重建）
     if os.path.exists(cache_file):
         with open(cache_file, 'r') as f:
             cache = json.load(f)
     else:
         cache = {}
-    installed = cache.get('installed', {})
-    changed = False
-    for pkg_name in removed_names:
-        if pkg_name in installed:
-            del installed[pkg_name]
-            changed = True
-    if changed:
-        cache['installed'] = installed
-        cache['updated_at'] = datetime.now().isoformat()
-        with open(cache_file, 'w') as f:
-            json.dump(cache, f, indent=2, ensure_ascii=False)
+    packages = cache.get('packages', {})
+    for p in packages.values():
+        p['installed'] = False
+        p['install_time'] = ''
+        p['installed_version'] = ''
+        p['upgradable'] = False
+    cache['packages'] = packages
+    cache['updated_at'] = datetime.now().isoformat()
+    with open(cache_file, 'w') as f:
+        json.dump(cache, f, indent=2, ensure_ascii=False)
 
-except Exception as e:
+except Exception:
     pass
 PYEOF
 exit 0

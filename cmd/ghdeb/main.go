@@ -1562,7 +1562,7 @@ func cmdList(args []string) error {
 		Installed        bool   `json:"installed"`
 		InstalledVersion string `json:"installed_version,omitempty"`
 		LatestVersion    string `json:"latest_version,omitempty"`
-		Upgradeable      bool   `json:"upgradeable"`
+		Upgradable       bool   `json:"upgradeable"`
 	}
 	var jsonPkgs []listPkg
 	installedCount := 0
@@ -1593,8 +1593,8 @@ func cmdList(args []string) error {
 		if sn != nil {
 			installed = sn.Installed
 			installedVer = sn.InstalledVersion
-			latest = sn.LatestVersion
-			upgradeable = sn.Upgradeable
+			latest = sn.GitHubVersion
+			upgradeable = sn.Upgradable
 		}
 
 		if installed {
@@ -1619,7 +1619,7 @@ func cmdList(args []string) error {
 				Name: name, Repo: entry.Repo, URL: entry.URL,
 				Summary: truncate(entry.Summary, 35), Installed: installed,
 				InstalledVersion: installedVer, LatestVersion: latest,
-				Upgradeable: upgradeable,
+				Upgradable: upgradeable,
 			})
 		} else {
 			iv, lv := installedVer, latest
@@ -1772,9 +1772,13 @@ func cmdUpdate(args []string) error {
 		}
 	}
 
-	// 4) 组装并写回快照
+	// 4) 组装并写回快照（扁平化：从 catalog.toml 枚举，单 package 段）
 	snap := state.LoadCache()
 	snap.UpdatedAt = time.Now().Format(time.RFC3339)
+	sysArch := ""
+	if ai, aErr := deb.DetectArch(); aErr == nil && ai != nil {
+		sysArch = ai.DpkgArch
+	}
 
 	for _, name := range names {
 		// 已因无 .deb 被移除的条目不进快照
@@ -1784,39 +1788,39 @@ func cmdUpdate(args []string) error {
 		}
 		entry := entries[name]
 
-		sp := &state.SnapshotPkg{Repo: entry.Repo}
+		sp := &state.PkgState{Name: name, Repo: entry.Repo, Arch: sysArch}
 
-		// 已装版本：优先已装缓存，未命中/过期才实查 dpkg 并回填缓存
+		// 已装信息：以 installed.json（ghdeb 管理历史）判定已装，
+		// 已装版本号始终用 dpkg-query 实查的系统版本
 		if st != nil && entry.Repo != "" {
 			rec := st.Get(entry.Repo)
 			if rec != nil && !rec.Removed {
 				sp.Installed = true
+				sp.InstallTime = rec.UpdatedAt
+				if rec.Arch != "" {
+					sp.Arch = rec.Arch
+				}
 				pkg := rec.PkgName
 				if pkg == "" {
 					pkg = rec.Repo
 				}
-				iv := state.GetCachedInstalled(pkg)
-				if iv == "" {
-					iv = state.QuerySystemVersion(pkg)
-					if iv != "" {
-						state.SetCachedInstalled(pkg, iv)
-					}
+				sp.InstalledVersion = state.QuerySystemVersion(pkg)
+				if le := rec.LatestEntry(); le != nil {
+					sp.PkgFile = le.DebFile
 				}
-				sp.InstalledVersion = iv
 			}
 		}
 
-		// 最新版本：快照内缓存或本次并发查询结果
+		// 最新版本：本次并发查询结果（GitHub 最新 tag）
 		if entry.Repo != "" {
-			owner, repo, perr := gh.ParseRepo(entry.Repo)
-			if perr == nil {
-				sp.LatestVersion = latestVer[owner+"/"+repo]
+			if owner, repo, perr := gh.ParseRepo(entry.Repo); perr == nil {
+				sp.GitHubVersion = latestVer[owner+"/"+repo]
 			}
 		}
 
 		// 可升级性
-		if sp.Installed && sp.InstalledVersion != "" && sp.LatestVersion != "" {
-			sp.Upgradeable = compareVersion(sp.InstalledVersion, sp.LatestVersion) < 0
+		if sp.Installed && sp.InstalledVersion != "" && sp.GitHubVersion != "" {
+			sp.Upgradable = compareVersion(sp.InstalledVersion, sp.GitHubVersion) < 0
 		}
 
 		snap.Set(name, sp)

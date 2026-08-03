@@ -210,7 +210,8 @@ i386@i386, x86, i686, 386
 .TE
 .SH 缓存
 .B ghdeb
-将 release 版本、已装版本与 list 快照统一缓存在单个文件
+将每个目录包的状态（已装、已装版本、GitHub 最新版本、可升级）扁平化
+缓存在单个文件
 .B /var/cache/ghdeb/cache.json
 中，TTL 为 24 小时。下载的 .deb 文件缓存在
 .B /var/cache/ghdeb/
@@ -235,7 +236,7 @@ GitHub 个人访问令牌。将 API 速率限制从 60 次/小时（未认证）
 系统包目录（内置 curated 的 GitHub .deb 包列表）。
 .TP
 .B /var/cache/ghdeb/cache.json
-统一缓存：GitHub release 版本、本地已装版本与 list 快照（24 小时 TTL）。
+扁平化统一缓存：每个目录包一条记录（已装状态、已装/最新版本、可升级，24 小时 TTL）。
 .TP
 .B /var/cache/ghdeb/*.deb
 已下载的 .deb 包缓存。

@@ -218,8 +218,8 @@ i386@i386, x86, i686, 386
 .TE
 .SH CACHE
 .B ghdeb
-caches release, installed-version and list-snapshot information in a single
-file
+caches each catalog package's state (installed, installed version, GitHub
+latest version, upgradeable) in a single flattened
 .B /var/cache/ghdeb/cache.json
 with a 24-hour TTL. Downloaded .deb files are cached in
 .BR /var/cache/ghdeb/ .
@@ -244,8 +244,8 @@ locales produce English output.
 System package catalog (curated list of known GitHub .deb packages).
 .TP
 .B /var/cache/ghdeb/cache.json
-Unified cache: GitHub release versions, locally installed versions and list
-snapshot (24h TTL).
+Unified flattened cache: one record per catalog package (installed state,
+installed/latest versions, upgradeable; 24h TTL).
 .TP
 .B /var/cache/ghdeb/*.deb
 Downloaded .deb package cache.
