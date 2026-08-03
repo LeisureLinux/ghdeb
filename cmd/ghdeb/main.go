@@ -27,7 +27,7 @@ var version = "dev" // 构建时通过 -ldflags -X 注入，避免多版本号�
 func main() {
 	// 检查是否使用 --json，如果是则不打印 banner
 	jsonMode := false
-	if len(os.Args) >= 2 && (os.Args[1] == "list" || os.Args[1] == "ls" || os.Args[1] == "show") {
+	if len(os.Args) >= 2 && (os.Args[1] == "list" || os.Args[1] == "ls" || os.Args[1] == "show" || os.Args[1] == "history") {
 		for _, arg := range os.Args[2:] {
 			if arg == "--json" {
 				jsonMode = true
@@ -1428,10 +1428,12 @@ func cmdPurge(args []string) error {
 	// 从 dpkg 系统状态反查实际已装包名（不依赖 history.json 管理记录）
 	installed := deb.ScanInstalledDpkg()
 	var pkgName string
+	var pkgVersion string
 	if installed != nil {
 		for _, cand := range deb.CandidatePkgNames(shortName, repoKey) {
 			if installed[cand] != nil {
 				pkgName = cand
+				pkgVersion = installed[cand].Version
 				break
 			}
 		}
@@ -1454,6 +1456,7 @@ func cmdPurge(args []string) error {
 	}
 
 	// 检查是否已安装
+	purged := false
 	if !deb.IsPackageInstalled(pkgName) {
 		fmt.Printf(T("⚠️  %s 未安装在系统上\n", "⚠️  %s is not installed on system\n"), pkgName)
 	} else {
@@ -1465,6 +1468,7 @@ func cmdPurge(args []string) error {
 		if err := cmd.Run(); err != nil {
 			return fmt.Errorf("purge 失败: %w", err)
 		}
+		purged = true
 
 		// autoremove
 		fmt.Printf(T("🧹 清理依赖 (apt-get autoremove)...\n", "🧹 Cleaning dependencies (apt-get autoremove)...\n"))
@@ -1474,10 +1478,14 @@ func cmdPurge(args []string) error {
 		_ = autoCmd.Run() // autoremove 失败不阻塞
 	}
 
-	// 同步 history.json：存在管理记录则标记移除
+	// 同步 history.json：存在管理记录则标记移除；
+	// 若包从未被 ghdeb 管理（如 apt 安装）但确实被 purge，则补建一条 remove 历史，便于 ghdeb history 查询
 	if st, lerr := state.Load(); lerr == nil {
 		if rec := st.Get(repoKey); rec != nil {
 			st.MarkRemoved(repoKey)
+			_ = st.Save()
+		} else if purged {
+			st.RecordPurge(repoKey, owner, repo, pkgName, pkgVersion)
 			_ = st.Save()
 		}
 	}
@@ -2000,25 +2008,142 @@ func estimateMinutes(n int) int {
 
 // --- history ---
 
-func cmdHistory(args []string) error {
-	if len(args) == 0 {
-		return fmt.Errorf("请指定仓库，如: ghdeb history LeisureLinux/ghdeb")
+type flatHistory struct {
+	Repo        string       `json:"repo"`
+	PkgName     string       `json:"pkg_name,omitempty"`
+	Action      state.Action `json:"action"`
+	Version     string       `json:"version"`
+	FromVersion string       `json:"from_version,omitempty"`
+	DebFile     string       `json:"deb_file,omitempty"`
+	DebPath     string       `json:"deb_path,omitempty"`
+	ReleaseURL  string       `json:"release_url,omitempty"`
+	Reinstall   bool         `json:"reinstall,omitempty"`
+	Timestamp   string       `json:"timestamp"`
+}
+
+// historySortKey 解析 RFC3339 时间用于排序；解析失败按零值（最早）处理
+func historySortKey(ts string) time.Time {
+	t, err := time.Parse(time.RFC3339, ts)
+	if err != nil {
+		return time.Time{}
 	}
+	return t
+}
+
+// collectFlatHistory 汇总所有包的历史记录为扁平列表
+func collectFlatHistory(st *state.State) []flatHistory {
+	var out []flatHistory
+	for repoKey, rec := range st.Packages {
+		for _, e := range rec.History {
+			out = append(out, flatHistory{
+				Repo:        repoKey,
+				PkgName:     rec.PkgName,
+				Action:      e.Action,
+				Version:     e.Version,
+				FromVersion: e.FromVersion,
+				DebFile:     e.DebFile,
+				DebPath:     e.DebPath,
+				ReleaseURL:  e.ReleaseURL,
+				Reinstall:   e.Reinstall,
+				Timestamp:   e.Timestamp,
+			})
+		}
+	}
+	// 按时间由旧到新
+	sort.SliceStable(out, func(i, j int) bool {
+		return historySortKey(out[i].Timestamp).Before(historySortKey(out[j].Timestamp))
+	})
+	return out
+}
+
+// formatHistoryLine 单条历史的一行文本
+func formatHistoryLine(e flatHistory) string {
+	ts := e.Timestamp
+	if ts != "auto-discovered" {
+		ts = formatTime(ts)
+	}
+	verb := strings.ToUpper(string(e.Action))
+	if e.Reinstall {
+		verb = "REINSTALL"
+	}
+	line := fmt.Sprintf("%s  %s  %s", ts, e.Repo, verb)
+	if e.Action == state.ActionUpgrade && e.FromVersion != "" {
+		line += fmt.Sprintf("  %s → %s", e.FromVersion, e.Version)
+	} else {
+		line += fmt.Sprintf("  %s", e.Version)
+	}
+	return line
+}
+
+func cmdHistory(args []string) error {
+	// 解析 --json
+	jsonOutput := false
+	var rest []string
+	for _, a := range args {
+		if a == "--json" {
+			jsonOutput = true
+		} else {
+			rest = append(rest, a)
+		}
+	}
+
 	st, err := state.Load()
 	if err != nil {
 		return err
 	}
-	rec := st.Get(args[0])
+
+	// 无参数：列出全部历史，按时间由旧到新，每行一条（--json 输出数组）
+	if len(rest) == 0 {
+		entries := collectFlatHistory(st)
+		if jsonOutput {
+			jsonData, _ := json.MarshalIndent(entries, "", "  ")
+			fmt.Println(string(jsonData))
+			return nil
+		}
+		for _, e := range entries {
+			fmt.Println(formatHistoryLine(e))
+		}
+		return nil
+	}
+
+	// 带参数：某包的详细历史
+	rec := st.Get(rest[0])
 	if rec == nil {
 		// 尝试短名称
-		owner, repo, resolveErr := resolvePkgArg(args[0])
+		owner, repo, resolveErr := resolvePkgArg(rest[0])
 		if resolveErr != nil {
-			return fmt.Errorf("未找到 %s 的记录", args[0])
+			return fmt.Errorf("未找到 %s 的记录", rest[0])
 		}
 		rec = st.Get(owner + "/" + repo)
 		if rec == nil {
-			return fmt.Errorf("未找到 %s 的记录", args[0])
+			return fmt.Errorf("未找到 %s 的记录", rest[0])
 		}
+	}
+	repoKey := rec.Owner + "/" + rec.Repo
+
+	// --json：输出该包历史数组
+	if jsonOutput {
+		var entries []flatHistory
+		for _, e := range rec.History {
+			entries = append(entries, flatHistory{
+				Repo:        repoKey,
+				PkgName:     rec.PkgName,
+				Action:      e.Action,
+				Version:     e.Version,
+				FromVersion: e.FromVersion,
+				DebFile:     e.DebFile,
+				DebPath:     e.DebPath,
+				ReleaseURL:  e.ReleaseURL,
+				Reinstall:   e.Reinstall,
+				Timestamp:   e.Timestamp,
+			})
+		}
+		sort.SliceStable(entries, func(i, j int) bool {
+			return historySortKey(entries[i].Timestamp).Before(historySortKey(entries[j].Timestamp))
+		})
+		jsonData, _ := json.MarshalIndent(entries, "", "  ")
+		fmt.Println(string(jsonData))
+		return nil
 	}
 
 	fmt.Printf("仓库: %s/%s\n", rec.Owner, rec.Repo)

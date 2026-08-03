@@ -195,6 +195,25 @@ func (s *State) MarkRemoved(repo string) {
 	})
 }
 
+// RecordPurge 当包从未被 ghdeb 管理（如 apt 直接安装）但被 ghdeb purge 时，
+// 创建一条仅含 remove 历史的管理记录，便于 ghdeb history 查询到「已删除」。
+func (s *State) RecordPurge(repo, owner, repoName, pkgName, version string) {
+	now := time.Now().Format(time.RFC3339)
+	rec := s.Packages[repo]
+	if rec == nil {
+		rec = &PackageRecord{Owner: owner, Repo: repoName, PkgName: pkgName}
+		s.Packages[repo] = rec
+	}
+	rec.CurrentVersion = version
+	rec.Removed = true
+	rec.UpdatedAt = now
+	rec.History = append(rec.History, HistoryEntry{
+		Action:    ActionRemove,
+		Version:   version,
+		Timestamp: now,
+	})
+}
+
 // List 返回所有记录（含已移除），按更新时间倒序
 func (s *State) List() []*PackageRecord {
 	var records []*PackageRecord
