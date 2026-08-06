@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"time"
 )
@@ -62,8 +63,18 @@ func LoadCache() *Cache {
 	return c
 }
 
-// SaveCache 保存统一缓存（权限不足时自动 sudo 写入）
+// SaveCache 保存统一缓存（权限不足时自动 sudo 写入）。
+// 若 packages 内容与磁盘现有快照完全一致，则跳过写入：避免在无实质变更时
+// 仅为刷新 updated_at 而触发 sudo 密码提示。
 func SaveCache(c *Cache) error {
+	// 内容未变（仅 updated_at 可能不同）时直接返回，不提示 sudo
+	if cur, err := os.ReadFile(CachePath()); err == nil {
+		var prev Cache
+		if json.Unmarshal(cur, &prev) == nil && reflect.DeepEqual(prev.Packages, c.Packages) {
+			return nil
+		}
+	}
+
 	dir := filepath.Dir(CachePath())
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		if err := sudoMkdirAll(dir); err != nil {

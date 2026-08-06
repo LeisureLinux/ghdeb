@@ -71,3 +71,42 @@ func TestFlatCache(t *testing.T) {
 	}
 	_ = os.Remove
 }
+
+// TestSaveCacheSkipsUnchanged 验证内容未变时 SaveCache 跳过写入（不触发 sudo），
+// 仅 updated_at 变化不应重写文件。
+func TestSaveCacheSkipsUnchanged(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("GHDEB_CACHE_DIR", dir)
+
+	c := LoadCache()
+	c.UpdatedAt = time.Now().Format(time.RFC3339)
+	c.Set("bat", &PkgState{Name: "bat", Repo: "sharkdp/bat", Installed: true, InstalledVersion: "0.24.0", GitHubVersion: "0.24.0"})
+	if err := SaveCache(c); err != nil {
+		t.Fatalf("SaveCache: %v", err)
+	}
+	fi1, _ := os.Stat(CachePath())
+
+	// 重新构造内容完全相同（仅 updated_at 不同）的快照并保存
+	c2 := LoadCache()
+	c2.UpdatedAt = time.Now().Add(time.Hour).Format(time.RFC3339) // 仅时间戳变化
+	if err := SaveCache(c2); err != nil {
+		t.Fatalf("SaveCache unchanged: %v", err)
+	}
+	fi2, _ := os.Stat(CachePath())
+	if !fi1.ModTime().Equal(fi2.ModTime()) {
+		t.Fatalf("expected write to be skipped when packages unchanged (mtime changed: %v -> %v)", fi1.ModTime(), fi2.ModTime())
+	}
+
+	// 内容真正变化时必须写入
+	c3 := LoadCache()
+	p := c3.Get("bat")
+	p.Installed = false
+	p.InstalledVersion = ""
+	if err := SaveCache(c3); err != nil {
+		t.Fatalf("SaveCache changed: %v", err)
+	}
+	fi3, _ := os.Stat(CachePath())
+	if fi3.ModTime().Equal(fi2.ModTime()) {
+		t.Fatal("expected write to happen when packages changed")
+	}
+}

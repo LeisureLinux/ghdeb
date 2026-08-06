@@ -10,7 +10,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -1641,58 +1640,11 @@ func restoreCatalogFile(src, dst string) error {
 }
 
 // compareVersion 比较两个软件版本，返回 -1(a<b) / 0(a==b) / 1(a>b)。
-// 归一化：去掉开头 v/V、忽略 epoch(1:xxx) 前缀；按 [.-_] 分段，
-// 数字段按数值比较，非数字段按字典序比较，缺省段视为更小。
-// 由此保证「已装版本 >= GitHub 最新版本」被判定为正常（不提示可升级）。
+// 直接使用 dpkg 的 Debian 版本比较算法（见 internal/deb/version.go），
+// 与 `dpkg --compare-versions` 结果一致：处理 epoch、revision、~ 前缀、
+// 前导零、字母序等。由此保证「已装版本 >= GitHub 最新版本」被判定为正常。
 func compareVersion(a, b string) int {
-	norm := func(s string) []string {
-		s = strings.TrimPrefix(s, "v")
-		s = strings.TrimPrefix(s, "V")
-		if i := strings.IndexByte(s, ':'); i >= 0 {
-			s = s[i+1:] // 忽略 epoch
-		}
-		return strings.FieldsFunc(s, func(r rune) bool {
-			return r == '.' || r == '-' || r == '_'
-		})
-	}
-	as, bs := norm(a), norm(b)
-	n := len(as)
-	if len(bs) > n {
-		n = len(bs)
-	}
-	for i := 0; i < n; i++ {
-		var ap, bp string
-		if i < len(as) {
-			ap = as[i]
-		}
-		if i < len(bs) {
-			bp = bs[i]
-		}
-		an, aErr := strconv.Atoi(ap)
-		bn, bErr := strconv.Atoi(bp)
-		switch {
-		case aErr == nil && bErr == nil:
-			if an < bn {
-				return -1
-			}
-			if an > bn {
-				return 1
-			}
-		case aErr == nil && bErr != nil:
-			// 数字段 > 空/字母段（如 1.2.4-1 的 -1 版本号高于 1.2.4）
-			return 1
-		case aErr != nil && bErr == nil:
-			return -1
-		default:
-			if ap < bp {
-				return -1
-			}
-			if ap > bp {
-				return 1
-			}
-		}
-	}
-	return 0
+	return deb.CompareVersions(a, b)
 }
 
 // --- list ---
