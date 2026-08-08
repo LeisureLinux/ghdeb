@@ -3,6 +3,12 @@ on:
   push:
     tags:
       - 'v*'                 # 打 tag（如 v0.7.53）即自动发版
+  workflow_dispatch:         # 手动触发（可选版本号）
+    inputs:
+      version:
+        description: '版本号（如 0.7.53），留空则用当前分支'
+        required: false
+        default: ''
 
 permissions:
   contents: write            # 需要创建 GitHub Release
@@ -20,9 +26,15 @@ jobs:
           go-version: '1.24.4'
 
       - name: Build all debs and create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}    # Actions 里 gh 需要显式 token
+          INPUT_VERSION: ${{ github.event.inputs.version }}
         run: |
-          # tag 形如 v0.7.53 → VERSION=0.7.53（与 .deb 包版本一致）
-          export VERSION="${GITHUB_REF_NAME#v}"
+          # 版本号：手动触发优先取输入；tag 触发取 tag（v0.7.53 → 0.7.53）
+          export VERSION="${INPUT_VERSION:-${GITHUB_REF_NAME#v}}"
+          if [[ -z "$VERSION" || "$VERSION" == *" "* ]]; then
+            echo "❌ 无法确定版本号（tag 触发需要 v* 标签）"; exit 1
+          fi
           echo "🚀 自动发版 v${VERSION}"
           bash release.sh --push
 
