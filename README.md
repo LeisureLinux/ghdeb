@@ -39,8 +39,13 @@ Many excellent CLI tools — **bat**, **fd**, **ripgrep**, **gh**, **rustdesk**,
 ```bash
 # 一次性配置 APT 源（含 GPG 公钥）
 curl -fsSL https://repo.freelamp.com/apt.key | sudo gpg --dearmor -o /usr/share/keyrings/freelamp.gpg
-echo "deb [signed-by=/usr/share/keyrings/freelamp.gpg] https://repo.freelamp.com bookworm main" \
-  | sudo tee /etc/apt/sources.list.d/freelamp.sources
+sudo tee /etc/apt/sources.list.d/freelamp.sources >/dev/null <<'EOF'
+Types: deb
+URIs: https://repo.freelamp.com
+Suites: bookworm
+Components: main
+Signed-By: /usr/share/keyrings/freelamp.gpg
+EOF
 
 # 更新并安装
 sudo apt update
