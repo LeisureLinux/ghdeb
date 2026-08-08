@@ -1,0 +1,23 @@
+name: Publish to Freelamp APT Repo
+on:
+  release:
+    types: [published]          # release 发布后自动同步到 repo.freelamp.com
+
+permissions:
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch to apt-repo
+        env:
+          APT_REPO_TOKEN: ${{ secrets.APT_REPO_TOKEN }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          curl -fsSL -X POST https://api.github.com/repos/LeisureLinux/apt-repo/dispatches \
+            -H "Authorization: Bearer ${APT_REPO_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "Content-Type: application/json" \
+            -d "{\"event_type\":\"publish\",\"client_payload\":{\"owner\":\"LeisureLinux\",\"repo\":\"ghdeb\",\"tag\":\"${TAG}\"}}"
+          echo "✅ 已通知 apt-repo 同步 ghdeb@${TAG}"

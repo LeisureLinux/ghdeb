@@ -32,14 +32,34 @@ Many excellent CLI tools — **bat**, **fd**, **ripgrep**, **gh**, **rustdesk**,
 
 ## How to install ghdeb?
 
+### 方式一：通过 Freelamp APT 仓库安装（推荐）
+
+支持 amd64 / arm64 / armhf / loong64 / riscv64，Debian / Ubuntu 通用：
+
+```bash
+# 一次性配置 APT 源（含 GPG 公钥）
+curl -fsSL https://repo.freelamp.com/apt.key | sudo gpg --dearmor -o /usr/share/keyrings/freelamp.gpg
+echo "deb [signed-by=/usr/share/keyrings/freelamp.gpg] https://repo.freelamp.com bookworm main" \
+  | sudo tee /etc/apt/sources.list.d/freelamp.sources
+
+# 更新并安装
+sudo apt update
+sudo apt install ghdeb
+```
+
+### 方式二：通过 ghdeb 自身安装（GitHub Releases）
+
 ```bash
 # Download and install the latest release
 ghdeb install LeisureLinux/ghdeb
 
 # Or install a specific version
 ghdeb install LeisureLinux/ghdeb@v0.6.0
+```
 
-# Or build from source
+### 方式三：从源码编译
+
+```bash
 git clone https://github.com/LeisureLinux/ghdeb.git
 cd ghdeb && make build && sudo make install
 ```

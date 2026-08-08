@@ -1,0 +1,4 @@
+# ghdeb: ignore git history and build outputs
+.git/
+dist/
+*.gif
