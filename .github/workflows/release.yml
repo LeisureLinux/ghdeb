@@ -26,6 +26,7 @@ jobs:
           go-version: '1.24.4'
 
       - name: Build all debs and create GitHub Release
+        id: build
         env:
           GH_TOKEN: ${{ github.token }}    # Actions 里 gh 需要显式 token
           INPUT_VERSION: ${{ github.event.inputs.version }}
@@ -37,5 +38,19 @@ jobs:
           fi
           echo "🚀 自动发版 v${VERSION}"
           bash release.sh --push
+          echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
 
-      # release 发布后，publish-to-apt.yml 会自动联动 repo.freelamp.com
+      # 注意：GITHUB_TOKEN 创建的 release 不会触发 release 事件（防递归），
+      # 所以在这里直接 dispatch 给 apt-repo（repository_dispatch 不受防递归限制）。
+      - name: Dispatch to Freelamp APT Repo
+        env:
+          APT_REPO_TOKEN: ${{ secrets.APT_REPO_TOKEN }}
+          TAG: ${{ steps.build.outputs.tag }}
+        run: |
+          echo "📡 通知 apt-repo 同步 ghdeb@${TAG}"
+          curl -fsSL -X POST https://api.github.com/repos/LeisureLinux/apt-repo/dispatches \
+            -H "Authorization: Bearer ${APT_REPO_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "Content-Type: application/json" \
+            -d "{\"event_type\":\"publish\",\"client_payload\":{\"owner\":\"LeisureLinux\",\"repo\":\"ghdeb\",\"tag\":\"${TAG}\"}}"
+          echo "✅ 已通知 apt-repo 同步 ghdeb@${TAG}"
