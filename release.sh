@@ -7,7 +7,8 @@ PUSH=0
 [[ "$1" == "--push" ]] && PUSH=1
 
 # 版本号取自 build-deb.sh，避免两处维护
-VERSION="$(sed -n 's/^VERSION="\(.*\)"/\1/p' build-deb.sh)"
+# 版本号：CI 里由 VERSION 环境变量传入（从 tag 提取）；本地手动时从 build-deb.sh 解析
+VERSION="${VERSION:-$(sed -n 's/^VERSION="\${VERSION:-\([^}]*\)}"/\1/p; t; s/^VERSION="\([^"]*\)"/\1/p' build-deb.sh | head -1)}"
 TAG="v${VERSION}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"

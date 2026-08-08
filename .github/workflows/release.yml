@@ -1,0 +1,29 @@
+name: Release ghdeb .deb packages
+on:
+  push:
+    tags:
+      - 'v*'                 # 打 tag（如 v0.7.53）即自动发版
+
+permissions:
+  contents: write            # 需要创建 GitHub Release
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0     # release notes 需要完整 git 历史
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.4'
+
+      - name: Build all debs and create GitHub Release
+        run: |
+          # tag 形如 v0.7.53 → VERSION=0.7.53（与 .deb 包版本一致）
+          export VERSION="${GITHUB_REF_NAME#v}"
+          echo "🚀 自动发版 v${VERSION}"
+          bash release.sh --push
+
+      # release 发布后，publish-to-apt.yml 会自动联动 repo.freelamp.com
